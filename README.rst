@@ -20,7 +20,7 @@ Requires Python>=3.6, packages needed are listed in requirements.txt.
 
 Usage
 -----
-For a tutorial see the ipython notebook located in `svbench/run_svbench.ipynb`
+For a tutorial see the ipython notebook; `svbench_tutorial.ipynb`
 
 To apply a model using the command line interface::
 
