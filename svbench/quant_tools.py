@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 import itertools
 import numpy as np
 import pandas as pd
-import subprocess
 from joblib import Parallel, delayed
 from svbench.io_tools import CallSet
 from sys import stderr
+
+__all__ = ["score", "reference_calls_found", "plot", ]
 
 
 def sv_key(chrom, start, chrom2, end):

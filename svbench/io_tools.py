@@ -16,7 +16,10 @@ import time
 from io import StringIO
 
 
-class ITEM:
+__all__ = ["Col", "CallSet", "concat_dfs"]
+
+
+class Col:
     """
 
     """
@@ -30,7 +33,7 @@ class ITEM:
         self.thresh = thresh
 
     def __repr__(self):
-        return f"svbench.ITEM(col={self.col}, key={self.key}, encoding={self.encoding}, bins={self.bins}, norm={self.norm}, op={self.op}, thresh={self.thresh})"
+        return f"svbench.Col(col={self.col}, key={self.key}, encoding={self.encoding}, bins={self.bins}, norm={self.norm}, op={self.op}, thresh={self.thresh})"
 
 
 class Operate:
@@ -148,8 +151,8 @@ def check_passed(operations, r, keep):
     passed = True
     for item in keep:
         if item.op is None:
-            raise ValueError("ITEM.op must be set using 'keep' argument e.g. "
-                             "ITEM('INFO', 'SU', op=eq, thresh=4)")
+            raise ValueError("Col.op must be set using 'keep' argument e.g. "
+                             "Col('INFO', 'SU', op=eq, thresh=4)")
         ck = col_parser(r, item.col, item.key)
         if not operations.test(item.op, ck, item.thresh):
             passed = False
@@ -235,13 +238,13 @@ def check_args(stratify, weight_field, keep, other_cols, size_range):
             continue
         if isinstance(item, list):
             for item2 in item:
-                assert isinstance(item2, ITEM)
+                assert isinstance(item2, Col)
         else:
-            assert isinstance(item, ITEM)
+            assert isinstance(item, Col)
 
     if stratify is not None and (stratify.bins is None or not hasattr(stratify.bins, '__iter__')):
         raise ValueError(
-            "Stratify must have an iterable for 'bins' argument e.g. ITEM('FORMAT', 'DV', bins=range(0, 60, 5))")
+            "Stratify must have an iterable for 'bins' argument e.g. Col('FORMAT', 'DV', bins=range(0, 60, 5))")
 
 
 def filter_by_size(df, size_range=(None, None)):
@@ -680,7 +683,7 @@ class CallSet:
 
         df = pd.DataFrame.from_records(res)
 
-        # Normalize new columns, might be more than one column added per ITEM
+        # Normalize new columns, might be more than one column added per Col
         if other_cols is not None:
             item_key = {(k.col, k.key): k for k in other_cols if k.norm is not None}
             for k, v in item_key.items():
