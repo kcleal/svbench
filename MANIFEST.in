@@ -1,2 +1,3 @@
 include svbench/*
+include models
 include models/*
