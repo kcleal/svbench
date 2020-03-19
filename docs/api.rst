@@ -18,3 +18,6 @@ variant. Typically this will result in each variant being assigned a probability
 although the exact output can be flexible, and can include optional filtering, for example.
 
 To inspect the contents of the model
+
+
+.. autofunction:: svbench.Col

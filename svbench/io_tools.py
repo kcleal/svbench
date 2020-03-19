@@ -20,7 +20,13 @@ __all__ = ["Col", "CallSet", "concat_dfs"]
 
 
 class Col:
-    """
+    """This is a column parser class. The input column must be index-able by 'col' argument. Subfields are accessed
+    using the 'key' argument. Values can be further encoded by providing a dict with the required mappings using the
+    'encoding' argument. The 'bins' argument can be used to stratify input into predefined bins.
+    :param col: The key of the primary data field
+    :rtype col: str, optional
+    :param key: The key of the secondary data field, optional
+    :rtype key: str, optional
 
     """
     def __init__(self, col, key=None, encoding=None, bins=None, norm=None, op=None, thresh=None):
