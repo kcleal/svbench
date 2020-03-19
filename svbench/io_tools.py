@@ -23,6 +23,7 @@ class Col:
     """This is a column parser class. The input column must be index-able by 'col' argument. Subfields are accessed
     using the 'key' argument. Values can be further encoded by providing a dict with the required mappings using the
     'encoding' argument. The 'bins' argument can be used to stratify input into predefined bins.
+
     :param col: The key of the primary data field
     :rtype col: str, optional
     :param key: The key of the secondary data field, optional
@@ -107,6 +108,18 @@ def get_interval_arrays(regions, slop, bedpe=False):
 
 
 def make_ncls_table(chrom_interval_start, chrom_interval_end, chrom_interval_index):
+    """Test doc
+
+    :param chrom_interval_start: an array of interval start start positions
+    :rtype chrom_interval_start: int, float
+    :param chrom_interval_end: an array of interval start start positions
+    :rtype chrom_interval_end: int, float
+    :param chrom_interval_index: an array of interval start start positions
+    :rtype chrom_interval_index: int, float
+
+    :return: dict
+    :rtype: dict"""
+
     return {k: NSV(chrom_interval_start[k], chrom_interval_end[k], chrom_interval_index[k])
             for k in chrom_interval_start}
 
@@ -271,6 +284,21 @@ def filter_by_size(df, size_range=(None, None)):
 
 
 class CallSet:
+    """
+    This class holds instructions for parsing an input file containing variants. Supported formats include
+    'vcf', 'bed', 'bedpe', 'csv'.
+    Raw data may optionally be saved within the object, along with a model-object for classifying input data.
+
+    :param dataset: A name for the input dataset (optional)
+    :type dataset: str
+    :param caller: The name of the variant caller used (optional)
+    :type caller: str
+    :param kwargs: CallSet attributes can be set during initialization - if any key in kwargs is not found in the \
+    self.default_params.keys() list, then the key: value pair is added to the self.required dictionary. The purpose of \
+    this feature is to allow the setting of required arguments, which can be useful when creating new class instances.
+    :type kwargs: dict
+    :returns: CallSet instance
+    """
     def __init__(self, dataset=None, caller=None, **kwargs):
 
         # Primary attributes
@@ -281,14 +309,14 @@ class CallSet:
         self.required = {}  # Set any number of required arguments. Note, arguments are accessed via kwargs
 
         # Secondary attributes
-        self.bedpe = False
+        # self.bedpe = False
         self.path = None
         self.tree = None
         self.breaks_df = None
         self.extra_cols = None
-        self.style = "GIAB"
-        self.add_weight = False,
-        self.weight_field = None,
+        # self.style = "GIAB"
+        # self.add_weight = False,
+        self.weight_field = None
         self.no_translocations = True
         self.allowed_svtypes = None
         self.keep = None
@@ -313,9 +341,9 @@ class CallSet:
         self.temp = None
 
         # Track defaults for persistence
-        self.default_params = {k: v for k, v in self.__dict__.items() if k in {"bedpe",
-                                                                               "style",
-                                                                               "add_weight",
+        self.default_params = {k: v for k, v in self.__dict__.items() if k in {#"bedpe",
+                                                                               # "style",
+                                                                               # "add_weight",
                                                                                "weight_field",
                                                                                "no_translocations",
                                                                                "allowed_svtypes",
@@ -393,6 +421,12 @@ class CallSet:
         return self
 
     def add_intervals(self, slop=250):
+        """Adds intervals to loaded data defined in self.breaks_df.
+
+        :param slop: The distance to add and subtract from each variant position.
+        :type slop: int
+        :returns: self
+        :rtype: svbench.CallSet"""
         self.slop = slop
         df = self.breaks_df
 
@@ -439,6 +473,10 @@ class CallSet:
         return self
 
     def deepcopy(self):
+        """Create a new deep-copy of this object
+
+        :returns: CallSet instance
+        :rtype: svbench.CallSet"""
         return copy.deepcopy(self)
 
     def new(self, **kwargs):
@@ -447,6 +485,17 @@ class CallSet:
         return n
 
     def filter_by_size(self, min_size=None, max_size=None, inplace=False):
+        """Filter the loaded data defined in self.breaks_df by size (base-pairs).
+
+        :param min_size: The minimum size threshold for the variant, size < min_size
+        :type min_size: int
+        :param max_size: The maximum size threshold for the variant, size > max_size
+        :type max_size: int
+        :param inplace: If set to True then filtering is performed inplace
+        :type inplace: bool
+        :return: CallSet instance
+        :rtype: svbench.CallSet
+        """
         if inplace:
             cs = self
         else:
@@ -552,6 +601,14 @@ class CallSet:
         return self
 
     def load(self, path):
+        """Load variants from the file path. For this function to work the CallSet instance must have the self.kind \
+        attribute set.
+
+        :param path: File path for input data
+        :type path: str
+        :return: CallSet instance
+        :rtype: svbench.CallSet
+        """
         if self.kind is None:
             raise ValueError("The file kind must be provided with the argument 'kind'")
         elif self.kind == "vcf":
@@ -563,10 +620,31 @@ class CallSet:
         else:
             raise ValueError("Unknown file kind {}".format(self.kind))
 
-    def load_vcf(self, path, style="GIAB", add_weight=False, weight_field=None,
+    def load_vcf(self, path, weight_field=None,
                  no_translocations=True, allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
                  min_size=None, max_size=None,
                  other_cols=None):
+        """Load variants from the vcf file path.
+
+        :param path: The path to the vcf input file
+        :type path: str
+        :param weight_field: The field used to weight a variant, useful for breaking ties between similar variants when \
+        benchmarking
+        :type weight_field: svbench.Col
+        :param no_translocations: Ignore translocations when loading file
+        :type no_translocations: bool
+        :param allowed_svtypes: The types of SVs allowed, comma seperated string e.g. "DEL", or "DEL,DUP,INV" etc
+        :type allowed_svtypes: str
+        :param keep: A list of filtering operations to perform on input data. e.g. keep=[Col("INFO", "SU", "ge" 3)] \
+        would keep variants if the value found in INFO --> SU was greater than or equal to 3
+        :type keep: list
+        :param stratify:
+        :param allowed_chroms:
+        :param min_size:
+        :param max_size:
+        :param other_cols:
+        :return:
+        """
 
         self.path = path
         self.kind = "vcf"
@@ -576,8 +654,8 @@ class CallSet:
         self.set_args(locals())  # Overwrite default params
 
         # Load instance parameters, these may have been set previously
-        style = self.style
-        add_weight = self.add_weight
+        # style = self.style
+        add_weight = self.weight_field is not None
         weight_field = self.weight_field
         no_translocations = self.no_translocations
         allowed_svtypes = self.allowed_svtypes
@@ -642,9 +720,10 @@ class CallSet:
                     end = int(r.ALT[0].pos)
             else:
                 chrom2 = chrom
-                if style == "GIAB":
+                # if style == "GIAB":
+                try:
                     end = int(r.INFO["END"])
-                else:
+                except IndexError:
                     raise IOError
 
             if no_translocations and chrom != chrom2:
@@ -754,7 +833,7 @@ class CallSet:
 
         return self
 
-    def load_csv(self, path, break_cols="chrA,posA,chrB,posB", sep=",", add_weight=False, weight_field=None,
+    def load_csv(self, path, break_cols="chrA,posA,chrB,posB", sep=",", weight_field=None,
                  allowed_svtypes=None, keep=None, svtype_field="svtype", no_translocations=True,
                  allowed_chroms=None, stratify=None,
                  min_size=None, max_size=None,
@@ -770,7 +849,7 @@ class CallSet:
         # Load instance parameters, these may have been set previously
         break_cols = self.break_cols
         sep = self.sep
-        add_weight = self.add_weight
+        add_weight = self.weight_field is not None
         weight_field = self.weight_field
         svtype_field = self.svtype_field
         drop_first_row = self.drop_first_row
@@ -826,7 +905,7 @@ class CallSet:
             df["strata"] = df_in[stratify.col].loc[df.index]
             self.stratify_range = stratify.bins
 
-        if add_weight and weight_field is not None:
+        if add_weight:
             df["w"] = df_in[weight_field.col]
         else:
             df["w"] = [None] * len(df)

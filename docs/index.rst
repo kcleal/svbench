@@ -30,7 +30,9 @@ Contents
    :caption: Contents:
 
    api.rst
-   usage.rst
+   api/svbench.io_tools.Col.rst
+   api/svbench.io_tools.concat_dfs.rst
+   api/svbench.io_tools.CallSet.rst
 
 
 Indices and tables

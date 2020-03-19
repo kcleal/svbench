@@ -19,5 +19,23 @@ although the exact output can be flexible, and can include optional filtering, f
 
 To inspect the contents of the model
 
+API
+===
 
-.. autofunction:: svbench.Col
+``CallSet`` class
+*****************
+.. autoclass:: svbench.CallSet
+    :members:
+    :undoc-members:
+
+
+``Col`` class
+**************
+.. autoclass:: svbench.Col
+    :members:
+    :undoc-members:
+
+
+``make_ncls_table`` function
+*****************************
+.. autofunction:: svbench.io_tools.make_ncls_table
