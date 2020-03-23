@@ -386,11 +386,15 @@ class CallSet:
             raise ValueError("Call add_intervals on both CallSet's before subtracting")
 
         this_df = self.breaks_df
-        bad_indexes = set([])
-        starts, ends, indexes = get_interval_arrays(list(zip(this_df["chrom"], this_df["start"], this_df["chrom2"],
-                                                  this_df["end"], this_df.index)), self.slop)
 
+        # starts, ends , indexes are all defaultdict, keys=chromosomes
+        starts, ends, indexes = get_interval_arrays(list(zip(this_df["chrom"], this_df["start"], this_df["chrom2"],
+                                                    this_df["end"], this_df.index)), self.slop)
+
+        # chr2:192559403-192559731
         other_tree = other.tree
+        #print([i for i in other.breaks_df["end"] if i == 24403011])
+        bad_indexes = set([])
         for chrom in starts.keys():
             if chrom in other_tree:
                 l_idxs, r_idxs = other_tree[chrom].ncls.all_overlaps_both(starts[chrom], ends[chrom], indexes[chrom])
