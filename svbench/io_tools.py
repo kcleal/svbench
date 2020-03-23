@@ -309,7 +309,7 @@ class CallSet:
         self.required = {}  # Set any number of required arguments. Note, arguments are accessed via kwargs
 
         # Secondary attributes
-        # self.bedpe = False
+        self.bedpe = False
         self.path = None
         self.tree = None
         self.breaks_df = None
@@ -341,7 +341,7 @@ class CallSet:
         self.temp = None
 
         # Track defaults for persistence
-        self.default_params = {k: v for k, v in self.__dict__.items() if k in {#"bedpe",
+        self.default_params = {k: v for k, v in self.__dict__.items() if k in {"bedpe",
                                                                                # "style",
                                                                                # "add_weight",
                                                                                "weight_field",
