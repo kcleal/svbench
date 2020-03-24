@@ -293,10 +293,9 @@ class CallSet:
     :type dataset: str
     :param caller: The name of the variant caller used (optional)
     :type caller: str
-    :param kwargs: CallSet attributes can be set during initialization - if any key in kwargs is not found in the \
+    :param kwargs: Allows CallSet attributes can be set during initialization - if any kwargs are not found in the \
     self.default_params.keys() list, then the key: value pair is added to the self.required dictionary. The purpose of \
     this feature is to allow the setting of required arguments, which can be useful when creating new class instances.
-    :type kwargs: dict
     :returns: CallSet instance
     """
     def __init__(self, dataset=None, caller=None, **kwargs):
@@ -995,9 +994,14 @@ class CallSet:
                     r_id = position
 
                     if r_id in col_vals:
-                        val = str(col_vals[r_id])
-                        if val == "1.0":
+                        vf = col_vals[r_id]
+
+                        if vf == 1:
                             val = "1"
+                        elif vf == 0:
+                            val = "0"
+                        else:
+                            val = f"{vf:.4f}"
                     else:
                         val = "0"
                     if add_to == "FORMAT":
@@ -1035,11 +1039,15 @@ class CallSet:
 
         if format is None and self.kind == "vcf":
             self.write_to_vcf(path, new_col, add_to)
-        if format is None and self.kind == "csv":
+        elif format is None and self.kind == "csv":
             raise ValueError("Not implemented currently")
 
         else:
             raise ValueError(self.kind, "not in {csv, vcf}")
+
+    @staticmethod
+    def _sort_func(x):
+        return x[0], x[1]
 
     def save_intervals(self, path, format="bed"):
         if format not in {"bed", "bedpe"}:
@@ -1063,7 +1071,7 @@ class CallSet:
                     v.append((r['chrom'], r['start'] - slop, r['start'] + slop, r["chrom2"], r["end"] - slop,
                               r["end"] + slop, idx))
 
-            v = ["\t".join([str(j) for j in i]) + "\n" for i in sorted(v, key=lambda x: (x[0], x[1]))]
+            v = ["\t".join([str(j) for j in i]) + "\n" for i in sorted(v, key=self._sort_func)]
             out.writelines(v)
 
 
