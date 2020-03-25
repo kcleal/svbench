@@ -680,7 +680,6 @@ class CallSet:
                 allowed_chroms = set(allowed_chroms)
 
         new_cols = []
-        new_index = []
 
         if path in "-stdin":
             temp = StringIO()
@@ -693,7 +692,7 @@ class CallSet:
         else:
             reader = vcf.Reader(filename=path)
 
-        for r in reader:
+        for vcf_index, r in enumerate(reader):
 
             chrom = r.CHROM
             if isinstance(chrom, int) or (isinstance(chrom, str) and chrom[0] != "c"):
@@ -743,15 +742,13 @@ class CallSet:
                 continue
 
             w = None
-
             if add_weight:
                 w = parse_cols(r, weight_field)
-
                 if isinstance(w, dict):
                     raise ValueError("Multiple values in weight field, choose a field with a single value")
                 wcol, w = w
 
-            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w}
+            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r.ID}
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
 
@@ -763,7 +760,6 @@ class CallSet:
                 d.update(parsed)
 
             res.append(d)
-            new_index.append(r.ID)
 
         if len(res) == 0:
             print("WARNING: empty vcf", file=stderr)
@@ -781,11 +777,8 @@ class CallSet:
                     if ecs[0] == k or (ecs[0], ecs[1]) == k:
                         df[ec] = v.norm(df[ec], self.kwargs)
 
-        # Keep record of IDs
-        df["new_index"] = new_index
-
         # Order df
-        base_cols = ["chrom", "start", "chrom2", "end", "w", "strata"]
+        base_cols = ["chrom", "start", "chrom2", "end", "w", "strata", "id"]
         df = df[[i for i in base_cols if i in df.columns] + new_cols]
 
         self.breaks_df = df
@@ -795,6 +788,7 @@ class CallSet:
             self.stratify_range = stratify.bins
 
         print(f"dataset={self.dataset}, caller={self.caller}, loaded rows: {len(df)}", file=stderr)
+        print("columns:", list(self.breaks_df.columns), file=stderr)
 
         return self
 
@@ -881,6 +875,7 @@ class CallSet:
 
         assert break_cols.count(",") == 3
         df = pd.DataFrame()
+        df["id"] = df.index
         for n, col in zip(["chrom", "start", "chrom2", "end"], break_cols.split(",")):
             df[n] = df_in[col]
 
@@ -957,7 +952,7 @@ class CallSet:
         if new_col is not None and not (add_to == "FORMAT" or add_to == "INFO"):
             raise ValueError("add_to argument must be FORMAT or INFO")
 
-        col_vals = {idx: v for idx, v in zip(self.breaks_df.index, self.breaks_df[new_col])}
+        col_vals = {idx: v for idx, v in zip(self.breaks_df.id, self.breaks_df[new_col])}
 
         replace_val = False
         write_h_line = True
@@ -991,7 +986,7 @@ class CallSet:
                         write_h = False
 
                     l = line.split("\t")
-                    r_id = position
+                    r_id = l[2]
 
                     if r_id in col_vals:
                         vf = col_vals[r_id]

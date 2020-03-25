@@ -72,7 +72,8 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
     dta = data.breaks_df
 
     tree = ref_data.tree
-    assert tree is not None
+    if tree is None:
+        raise ValueError("Interval tree has not been created, call add_intervals first")
 
     # # Link query calls to reference calls
     for query_idx, chrom, start, chrom2, end, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
@@ -312,7 +313,7 @@ def reference_calls_found(ref_data, query_data):
     return ref_data
 
 
-def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, refs=None):
+def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, refs=None, save_prefix=None):
     choices = {'Total', 'TP', 'FP', 'FN', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
@@ -365,6 +366,8 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
             plt.ylim(*ylim)
         plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         plots[ref_name] = plt
+        if save_prefix:
+            plt.savefig(save_prefix + str(ref_name) + ".pdf")
     if show:
         plt.show()
     return plots
