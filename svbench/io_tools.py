@@ -202,7 +202,8 @@ def parse_cols(r, item):
             elif None in encoding:
                 return f"{col}:{key}", encoding[None]
             else:
-                raise ValueError("{}:{} could not be found in encoding".format(col, key), item)
+
+                raise ValueError("value from column={}:{} could not be found in encoding. Value was {}, of type {}".format(col, key, p, type(p)), item)
 
         else:
             if type(r) == vcf.model._Record:
@@ -573,6 +574,9 @@ class CallSet:
                 print(pp.to_string(), file=stderr)
 
         self.breaks_df[col_name] = y_predict
+        #
+        # for i in range(5):
+        #     print(self.breaks_df.iloc[i][["chrom", "start", "PROB"]], file=stderr)
         return self
 
     def predict(self, model=None, col_name="PROB", show_stats=True, density=False, bins=2, show_model=True):
@@ -680,6 +684,7 @@ class CallSet:
                 allowed_chroms = set(allowed_chroms)
 
         new_cols = []
+        unique_ids = {}
 
         if path in "-stdin":
             temp = StringIO()
@@ -748,7 +753,12 @@ class CallSet:
                     raise ValueError("Multiple values in weight field, choose a field with a single value")
                 wcol, w = w
 
-            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r.ID}
+            if r.ID in unique_ids or r.ID is None:
+                r_id = f"{r.CHROM}:f{r.POS}"
+            else:
+                r_id = r.ID
+
+            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id}
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
 
@@ -960,6 +970,7 @@ class CallSet:
         header_lines = []
         last_add_index = 0
         position = 0
+
         with f_out, get_f_in(self.path) as f_in:
 
             for findex, line in enumerate(f_in):
@@ -990,6 +1001,15 @@ class CallSet:
 
                     if r_id in col_vals:
                         vf = col_vals[r_id]
+                        if vf == 1:
+                            val = "1"
+                        elif vf == 0:
+                            val = "0"
+                        else:
+                            val = f"{vf:.4f}"
+
+                    elif f"{l[0]}:f{l[1]}" in col_vals:
+                        vf = col_vals[f"{l[0]}:f{l[1]}"]
 
                         if vf == 1:
                             val = "1"
@@ -999,6 +1019,7 @@ class CallSet:
                             val = f"{vf:.4f}"
                     else:
                         val = "0"
+
                     if add_to == "FORMAT":
                         vidx = None
                         if replace_val:
