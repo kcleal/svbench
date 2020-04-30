@@ -313,7 +313,8 @@ def reference_calls_found(ref_data, query_data):
     return ref_data
 
 
-def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, refs=None, save_prefix=None):
+def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, refs=None, save_prefix=None,
+         duplicate_tp=False):
     choices = {'Total', 'TP', 'FP', 'FN', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
@@ -344,6 +345,8 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
         ax.spines['top'].set_visible(False)
         for cs in grp:
             bed = cs.breaks_df
+            if not duplicate_tp and "DTP" in bed.columns:
+                bed = bed[~bed["DTP"]]
             if "strata" not in bed.columns:
                 ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=next(markers))
 
@@ -351,7 +354,8 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
                 x_val = []
                 y_val = []
                 for threshold in cs.stratify_range:
-                    df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
+                    # df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
+                    df = bed[bed["strata"] >= threshold]
                     x_val.append(calc_score(df, x))
                     y_val.append(calc_score(df, y))
 
