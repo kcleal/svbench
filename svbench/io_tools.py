@@ -728,8 +728,12 @@ class CallSet:
             else:
                 chrom2 = chrom
                 # if style == "GIAB":
+                # print(r, type(r.INFO['END']), file=stderr)
                 try:
-                    end = int(r.INFO["END"])
+                    end = r.INFO["END"]
+                    if isinstance(end, list):
+                        end = end[0]
+                    end = int(end)
                 except IndexError:
                     raise IOError
 
