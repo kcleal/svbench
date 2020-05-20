@@ -16,6 +16,7 @@ from io import StringIO
 import networkx as nx
 from collections import Counter
 import pandas as pd
+import dill
 
 
 __all__ = ["Col", "CallSet", "concat_dfs"]
@@ -339,7 +340,8 @@ class CallSet:
         self.kind = None
         self.new_col = None
         self.add_to = None
-
+        self.add_chr_prefix = True
+        self.id_field=None
         self.temp = None
 
         # Track defaults for persistence
@@ -374,12 +376,15 @@ class CallSet:
         if not isinstance(other, CallSet):
             raise ValueError("Calling add on {}, should be instance of CallSet".format(type(other)))
 
-        self.breaks_df["source"] = [self.caller] * len(self.breaks_df)
+        n = self.deepcopy()
+
+        n.breaks_df["source"] = [n.caller] * len(n.breaks_df)
         other_df = other.breaks_df.copy(deep=True)
         other_df["source"] = [other.caller] * len(other_df)
-        self.breaks_df = pd.concat([self.breaks_df, other_df])
-        self.tree = None
-        return self
+        n.breaks_df = pd.concat([n.breaks_df, other_df])
+        n.breaks_df.reset_index(inplace=True)
+        n.tree = None
+        return n
 
     def __sub__(self, other):
         if not isinstance(other, CallSet):
@@ -553,8 +558,11 @@ class CallSet:
         self.stratify_range = stratify_range
         return self
 
-    def predict_proba(self, model=None, col_name="PROB", show_stats=True, density=False, bins=20, show_model=True):
+    def predict_proba(self, model=None, col_name="PROB", show_stats=True, density=False, bins=20, show_model=True,
+                      extra_cols=None):
 
+        if extra_cols is None:
+            extra_cols = self.extra_cols
         if model is None:
             model = self.model
         if model is None:
@@ -563,7 +571,8 @@ class CallSet:
             print("Model:", model, file=stderr)
 
         # Sometimes NaN creep in or infinity
-        X = np.nan_to_num(self.breaks_df[self.extra_cols].astype(float))
+        print("Using cols", extra_cols, file=stderr)
+        X = np.nan_to_num(self.breaks_df[extra_cols].astype(float))
         y_predict = model.predict_proba(X)[:, 1]
 
         if show_stats:
@@ -703,8 +712,18 @@ class CallSet:
         else:
             reader = vcf.Reader(filename=path)
 
-        for vcf_index, r in enumerate(reader):
 
+        while True:
+
+            try:
+                r = next(reader)
+            except StopIteration:
+                break
+            except:
+                continue
+
+        # for vcf_index, r in enumerate(reader):
+        #     print(r, file=stderr)
             chrom = r.CHROM
             if isinstance(chrom, int) or (isinstance(chrom, str) and chrom[0] != "c"):
                 chrom = "chr" + str(chrom)
@@ -851,12 +870,13 @@ class CallSet:
         return self
 
     def load_csv(self, path, break_cols="chrA,posA,chrB,posB", sep=",", weight_field=None,
-                 allowed_svtypes=None, keep=None, svtype_field="svtype", no_translocations=True,
+                 allowed_svtypes=None, keep=None, svtype_field="svtype", no_translocations=True, id_field=None,
                  allowed_chroms=None, stratify=None,
                  min_size=None, max_size=None,
-                 other_cols=None, drop_first_row=False):
+                 other_cols=None, drop_first_row=False,
+                 add_chr_prefix=True):
 
-        self.path = path
+        # self.path = path
         self.kind = "csv"
 
         check_args(stratify, weight_field, keep, other_cols, (min_size, max_size))
@@ -881,7 +901,14 @@ class CallSet:
 
         operations = Operate()
 
-        df_in = pd.read_csv(path, sep=sep, index_col=None, comment="#")
+        if isinstance(path, str):
+            df_in = pd.read_csv(path, sep=sep, index_col=None, comment="#")
+        else:
+            # Assume pandas dataframe
+            if not isinstance(path, pd.DataFrame):
+                raise ValueError("Only pandas DataFrame objects of 'str' arguments can be accepted")
+            df_in = path
+
         if drop_first_row:
             df_in.drop([0], inplace=True)
 
@@ -894,10 +921,21 @@ class CallSet:
                 df_in = df_in[[operations.test(item.op, i, item.thresh) for i in df_in[item.col]]]
 
         assert break_cols.count(",") == 3
+
         df = pd.DataFrame()
-        df["id"] = df.index
+
         for n, col in zip(["chrom", "start", "chrom2", "end"], break_cols.split(",")):
-            df[n] = df_in[col]
+
+            if n[:3] == "chr" and add_chr_prefix and df_in[col].iloc[0][:3] != "chr":
+                df[n] = df_in[col].astype(str).add_prefix("chr")
+            else:
+                df[n] = df_in[col]
+
+        if id_field is not None:
+            df["id"] = df_in[id_field]
+        else:
+            df["id"] = df.index
+        print(df.head(), file=stderr)
 
         if allowed_chroms:
             if not isinstance(allowed_chroms, set):
@@ -980,10 +1018,11 @@ class CallSet:
         header_lines = []
         last_add_index = 0
         position = 0
-
+        print("Writing vcf to", path, file=stderr)
         with f_out, get_f_in(self.path) as f_in:
 
             for findex, line in enumerate(f_in):
+
                 if line[0] == "#":
 
                     if f'##{add_to}' in line:
@@ -1049,11 +1088,12 @@ class CallSet:
                                 lis = l[i].split(":")
                                 lis[vidx] = val
                                 l[i] = ":".join(lis)
-
                         f_out.writelines("\t".join(l))
                     elif add_to == "INFO":
                         l[7] += f";{new_col}={val}"
                         f_out.writelines("\t".join(l))
+                    else:
+                        raise ValueError("Add to INFO/FORMAT only")
 
                     position += 1
 
@@ -1115,58 +1155,12 @@ def concat_dfs(cs_list):
     return pd.concat([i.breaks_df for i in cs_list])
 
 
-@click.command()
-@click.argument('svbench_file', required=True, type=click.Path(exists=True))
-@click.argument('input_file', required=False, type=click.Path())
-@click.option("-o", "output", help="Output file", required=False, type=click.Path(), default="stdout",
-              show_default=True)
-@click.option("-c", "--col", help="Column name for model output", default="FORMAT,PROB", type=str,
-              show_default=True)
-@click.option("-m", "--method", help="Classifier method to use", default="predict_proba",
-              type=click.Choice(["predict", "predict_proba"]), show_default=True)
-def apply_model(**kwargs):
-    """Apply an SVBench classifier object to SV dataset."""
-    t0 = time.time()
-    d = pickle.load(open(kwargs["svbench_file"], "rb"))
-    d.dataset = None
-
-    if not isinstance(d, CallSet):
-        raise ValueError("SVBench file is not instance of CallSet {}".format(type(d)))
-    if d.model is None:
-        raise ValueError("SVBench file has no model, attribute model=None")
-
-    new_col, add_to = None, None
-    if kwargs["col"].count(",") == 1:
-        add_to, new_col = kwargs["col"].split(",")
-        print("Adding column {} to {}".format(new_col, add_to), file=stderr)
-    else:
-        raise ValueError("col argument not understood")
-
-    if kwargs["input_file"] is None:
-        kwargs["input_file"] = "-"  # assume stdin
-
-    d.load(kwargs["input_file"])
-    # Add arguments to context insert_median, insert_stdev, read_length, out_name
-
-    if kwargs["output"] == "stdout" or kwargs["output"] == "-":
-        out = stdout
-    else:
-        out = open(kwargs["output"], "w")
-
-    with out:
-        if kwargs["method"] == "predict_proba":
-            d.predict_proba(col_name=new_col).save_as(out, new_col, add_to)
-
-    click.echo("SVBench complete, mem={} Mb, time={} h:m:s".format(
-        int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
-        str(datetime.timedelta(seconds=int(time.time() - t0)))), err=True)
-
 def sv_key(chrom, start, chrom2, end):
     # Return a sorted record
     if chrom2 < chrom:
-            return chrom2, end, chrom, start
+        return chrom2, end, chrom, start
     if end < start:
-            return chrom2, end, chrom, start
+        return chrom2, end, chrom, start
     else:
         return chrom, start, chrom2, end
 
@@ -1247,8 +1241,11 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
         # Choose an index by highest weight/lowest total distance, meeting reciprocal_overlap threshold
         min_d = 1e12
         chosen_index = None
+
         for index in common_idxs:
+
             ref_row = ref_bedpe.loc[index]
+
             ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"], ref_row["chrom2"],
                                                                ref_row["end"])
 
@@ -1375,3 +1372,71 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
     data.false_negative_indexes = missing_ref_indexes
 
     return data
+
+
+@click.command(context_settings=dict(
+    ignore_unknown_options=True, allow_extra_args=True
+))
+@click.argument('svbench_file', required=True, type=click.Path(exists=True))
+@click.argument('input_file', required=False, type=click.Path())
+@click.option("-o", "output", help="Output file", required=False, type=click.Path(), default="stdout",
+              show_default=True)
+@click.option("-c", "--col", help="Column name for model output", default="FORMAT,PROB", type=str,
+              show_default=True)
+@click.option("-m", "--method", help="Classifier method to use", default="predict_proba",
+              type=click.Choice(["predict", "predict_proba"]), show_default=True)
+# @click.argument('model_args', nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def apply_model(ctx, **kwargs):
+    """Apply an SVBench classifier object to SV dataset."""
+    ctx.ensure_object(dict)
+    t0 = time.time()
+    d = dill.load(open(kwargs["svbench_file"], "rb"))
+    # d = pickle.load(open(kwargs["svbench_file"], "rb"))
+    d.dataset = None
+
+    # print(f"Model args: {kwargs['model_args']}", file=stderr)
+    extras = {}
+    if len(ctx.args) > 0:
+        for item in ctx.args:
+            if "=" not in item:
+                raise ValueError("Extra args need to supplied in space-separated string format as arg1=v1 arg2=v2 etc.")
+            k, v = item.split("=")
+            if isinstance(v, float):
+                extras[k] = float(v)
+            else:
+                extras[k] = v
+        print("Extra model args: ", extras, file=stderr)
+
+    d.set_properties(extras)
+
+    if not isinstance(d, CallSet):
+        raise ValueError("SVBench file is not instance of CallSet {}".format(type(d)))
+    if d.model is None:
+        raise ValueError("SVBench file has no model, attribute model=None")
+
+    new_col, add_to = None, None
+    if kwargs["col"].count(",") == 1:
+        add_to, new_col = kwargs["col"].split(",")
+        print("Adding column {} to {}".format(new_col, add_to), file=stderr)
+    else:
+        raise ValueError("col argument not understood")
+
+    if kwargs["input_file"] is None:
+        kwargs["input_file"] = "-"  # assume stdin
+
+    d.load(kwargs["input_file"])
+    # Add arguments to context insert_median, insert_stdev, read_length, out_name
+
+    if kwargs["output"] == "stdout" or kwargs["output"] == "-":
+        out = stdout
+    else:
+        out = open(kwargs["output"], "w")
+
+    with out:
+        if kwargs["method"] == "predict_proba":
+            d.predict_proba(col_name=new_col).save_as(out, new_col, add_to)
+
+    click.echo("SVBench complete, mem={} Mb, time={} h:m:s".format(
+        int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
+        str(datetime.timedelta(seconds=int(time.time() - t0)))), err=True)

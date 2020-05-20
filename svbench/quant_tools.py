@@ -6,6 +6,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from svbench.io_tools import CallSet, quantify
 from sys import stderr
+import numpy as np
 
 __all__ = ["score", "reference_calls_found", "plot", ]
 
