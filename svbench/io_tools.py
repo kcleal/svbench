@@ -712,15 +712,18 @@ class CallSet:
         else:
             reader = vcf.Reader(filename=path)
 
-
+        vcf_index = 0
         while True:
-
             try:
                 r = next(reader)
+                vcf_index += 1
             except StopIteration:
                 break
-            except:
+            except IndexError:  # Parsing error
                 continue
+            except Exception:
+                print(f"Warning: parsing broke at vcf index {vcf_index}", file=stderr)
+                break
 
         # for vcf_index, r in enumerate(reader):
         #     print(r, file=stderr)
@@ -801,7 +804,7 @@ class CallSet:
             res.append(d)
 
         if len(res) == 0:
-            print("WARNING: empty vcf", file=stderr)
+            print(f"Warning: empty vcf {path}", file=stderr)
             return self
 
         df = pd.DataFrame.from_records(res)
