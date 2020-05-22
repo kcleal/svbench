@@ -33,7 +33,7 @@ class Col:
     :rtype key: str, optional
 
     """
-    def __init__(self, col, key=None, encoding=None, bins=None, norm=None, op=None, thresh=None):
+    def __init__(self, col, key=None, encoding=None, bins=None, norm=None, op=None, thresh=None, add=None):
         self.col = col
         self.key = key
         self.encoding = encoding
@@ -41,9 +41,12 @@ class Col:
         self.norm = norm
         self.op = op
         self.thresh = thresh
+        self.add = None
+        if add is not None:
+            self.add = add
 
     def __repr__(self):
-        return f"svbench.Col(col={self.col}, key={self.key}, encoding={self.encoding}, bins={self.bins}, norm={self.norm}, op={self.op}, thresh={self.thresh})"
+        return f"svbench.Col(add={self.add} col={self.col}, key={self.key}, encoding={self.encoding}, bins={self.bins}, norm={self.norm}, op={self.op}, thresh={self.thresh})"
 
 
 class Operate:
@@ -185,6 +188,18 @@ def check_passed(operations, r, keep):
 def get_strata(r, strat):
 
     cp = col_parser(r, strat.col, strat.key)
+
+    if strat.add is not None:
+        vals = [cp]
+        current = strat.add
+        while True:
+            v = col_parser(r, current.col, current.key)
+            if v is not None:
+                vals.append(v)
+            if current.add is None:
+                break
+        cp = sum(vals)
+
     if cp is None:
         cp = 0
     return float(cp)
@@ -201,9 +216,11 @@ def parse_cols(r, item):
         if key is not None:
             p = col_parser(r, item.col, item.key)
             if p in encoding:
-                return f"{col}:{key}", encoding[p]
+                item.parsed_value = encoding[p]
+                return f"{col}:{key}", item.parsed_value # encoding[p]
             elif None in encoding:
-                return f"{col}:{key}", encoding[None]
+                item.parsed_value = encoding[None]
+                return f"{col}:{key}", item.parsed_value
             else:
 
                 raise ValueError("value from column={}:{} could not be found in encoding. Value was {}, of type {}".format(col, key, p, type(p)), item)
@@ -220,9 +237,11 @@ def parse_cols(r, item):
                 p = r[col]
 
             if p in encoding:
-                return col, encoding[p]
+                item.parsed_value = encoding[p]
+                return col, item.parsed_value
             else:
-                return col, encoding[None]
+                item.parsed_value = encoding[None]
+                return col, item.parsed_value
 
     else:
         if key is not None:
@@ -233,9 +252,11 @@ def parse_cols(r, item):
                     d[f"{col}:{key}:{index}"] = v
                 return d
             else:
-                return f"{col}:{key}", p
+                item.parsed_value = p
+                return f"{col}:{key}", item.parsed_value
         else:
-            return col, r[col]
+            item.parsed_value = r[col]
+            return col, item.parsed_value
 
 
 def parse_cols_list(r, parse_list, data):
