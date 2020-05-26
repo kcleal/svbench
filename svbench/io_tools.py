@@ -414,8 +414,28 @@ class CallSet:
             raise ValueError("Call add_intervals on both CallSet's before subtracting")
 
         matching_indexes = quantify(other, self, good_indexes_only=True)
-        self.breaks_df = self.breaks_df[~np.array(matching_indexes)]
-        return self
+        n = self.deepcopy()
+        n.breaks_df = n.breaks_df[~np.array(matching_indexes)]
+        n.breaks_df.reset_index(inplace=True)
+        n.tree = None
+        return n
+
+    def intersection(self, other):
+        return self.__iand__(other)
+
+    def __iand__(self, other):
+        if not isinstance(other, CallSet):
+            raise ValueError("Calling add on {}, should be instance of CallSet".format(type(other)))
+        if self.tree is None or other.tree is None:
+            raise ValueError("Call add_intervals on both CallSet's before subtracting")
+
+        matching_indexes = quantify(other, self, good_indexes_only=True)
+        n = self.deepcopy()
+        n.breaks_df = n.breaks_df[np.array(matching_indexes)]
+        n.breaks_df.reset_index(inplace=True)
+        n.tree = None
+        return n
+
         # This didnt work as expected
         # print("Matching", matching_indexes)
         # quit()
@@ -740,11 +760,13 @@ class CallSet:
                 vcf_index += 1
             except StopIteration:
                 break
-            except IndexError:  # Parsing error
-                continue
-            except Exception:
-                print(f"Warning: parsing broke at vcf index {vcf_index}", file=stderr)
-                break
+            # except IndexError or ValueError:  # Parsing error
+            #     print(f"Warning: skipping vcf index {vcf_index} {r}", file=stderr)
+            #     continue
+            # except Exception:
+            #     print(f"Warning: parsing failed at vcf index {vcf_index} {r}", file=stderr)
+            #     # print(next(reader), file=stderr)
+            #     break
 
         # for vcf_index, r in enumerate(reader):
         #     print(r, file=stderr)
@@ -1321,7 +1343,6 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
                 duplicate_idxs.update(others)
 
             else:  # Do multi with the maximum-bipartite-matching
-                # need to do "q" == 1 and "t" == 2, then  algorithm DELLY
                 print("Maximum bipartite matching not implemented", file=stderr)
                 quit()
         continue
@@ -1364,11 +1385,13 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
             t.update({"Precision": round(float(t["TP"]) / sub_total, 4),  # Note DTP are not included
                       "Sensitivity": round(float(t["TP"]) / t["Ref"], 4),
                       "Recall": round(float(t["TP"]) / t["Ref"], 4)})
-            t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+            if (t["Precision"] + t["Recall"]) > 0:
+                t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+            else:
+                t["F1"] = None
             ts.append(t)
 
         else:
-
 
             df = dta[dta["strata"] >= threshold]
 
