@@ -139,17 +139,23 @@ def col_parser(r, col, key, first=True):
     if col == "FORMAT":
         col = r.__getattribute__("samples")
         if len(col) > 1:
-            raise ValueError("SVBench only supports one FORMAT column per vcf file, {} found", len(col))
-        try:
-            ck = col[0][key]
-        except IndexError:
-            raise ValueError("The FORMAT column is missing a name i.e. #CHROM  POS     ID      REF     ALT     QUAL    FILTER  INFO    FORMAT   {name}???")
+            # Return the value from all the samples
+            try:
+                ck = [i[key] for i in col]
+            except IndexError:
+                raise IndexError(f"Error parsing key {key}")
+            # raise ValueError("SVBench only supports one FORMAT column per vcf file, {} found", len(col))
+        else:
+            try:
+                ck = col[0][key]
+            except IndexError:
+                raise IndexError(f"The FORMAT column is missing a name: {key}")
 
     else:
         try:
             col = r.__getattribute__(col)
         except KeyError:
-            raise ValueError("Column argument not understood, did you mean 'INFO'?")
+            raise KeyError("Column argument not understood, did you mean 'INFO'?")
 
         if key is not None:
             if key in col:
