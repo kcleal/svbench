@@ -223,7 +223,7 @@ def parse_cols(r, item):
             p = col_parser(r, item.col, item.key)
             if p in encoding:
                 item.parsed_value = encoding[p]
-                return f"{col}:{key}", item.parsed_value # encoding[p]
+                return f"{col}:{key}", item.parsed_value  # encoding[p]
             elif None in encoding:
                 item.parsed_value = encoding[None]
                 return f"{col}:{key}", item.parsed_value
@@ -266,15 +266,22 @@ def parse_cols(r, item):
 
 
 def parse_cols_list(r, parse_list, data):
-
     for item in parse_list:
         d = parse_cols(r, item)
         if isinstance(d, dict):
             data.update(d)
         else:
             data[d[0]] = d[1]
-
     return data
+
+
+def parse_all_cols(r):
+    all_cols = []
+    for k in r.INFO.keys():
+        all_cols.append(Col("INFO", k))
+    for k in r.FORMAT.split(":"):
+        all_cols.append(Col("FORMAT", k))
+    return parse_cols_list(r, all_cols, {})
 
 
 def check_args(stratify, weight_field, keep, other_cols, size_range):
@@ -344,8 +351,6 @@ class CallSet:
         self.tree = None
         self.breaks_df = None
         self.extra_cols = None
-        # self.style = "GIAB"
-        # self.add_weight = False,
         self.weight_field = None
         self.no_translocations = True
         self.allowed_svtypes = None
@@ -422,9 +427,12 @@ class CallSet:
         matching_indexes = quantify(other, self, good_indexes_only=True)
         n = self.deepcopy()
         n.breaks_df = n.breaks_df[~np.array(matching_indexes)]
-        n.breaks_df.reset_index(inplace=True)
+        # n.breaks_df.reset_index(inplace=True)
         n.tree = None
         return n
+
+    def __len__(self):
+        return len(self.breaks_df)
 
     def intersection(self, other):
         return self.__iand__(other)
@@ -438,7 +446,7 @@ class CallSet:
         matching_indexes = quantify(other, self, good_indexes_only=True)
         n = self.deepcopy()
         n.breaks_df = n.breaks_df[np.array(matching_indexes)]
-        n.breaks_df.reset_index(inplace=True)
+        # n.breaks_df.reset_index(inplace=True)
         n.tree = None
         return n
 
@@ -746,7 +754,7 @@ class CallSet:
                 allowed_chroms = set(allowed_chroms)
 
         new_cols = []
-        unique_ids = {}
+        unique_ids = set([])
 
         if path in "-stdin":
             temp = StringIO()
@@ -766,9 +774,9 @@ class CallSet:
                 vcf_index += 1
             except StopIteration:
                 break
-            # except IndexError or ValueError:  # Parsing error
-            #     print(f"Warning: skipping vcf index {vcf_index} {r}", file=stderr)
-            #     continue
+            except ValueError:  # Parsing error
+                print(f"Warning: skipping vcf index {vcf_index} {r}", file=stderr)
+                continue
             # except Exception:
             #     print(f"Warning: parsing failed at vcf index {vcf_index} {r}", file=stderr)
             #     # print(next(reader), file=stderr)
@@ -784,8 +792,12 @@ class CallSet:
                 continue
 
             start = int(r.POS)
-
-            svtype = r.INFO["SVTYPE"]
+            # print(r, file=stderr)
+            # print(r.INFO, file=stderr)
+            try:
+                svtype = r.INFO["SVTYPE"]
+            except KeyError:
+                continue
 
             if allowed_svtypes is not None and svtype not in allowed_svtypes:
                 continue
@@ -813,7 +825,18 @@ class CallSet:
                     end = int(end)
                 except IndexError:
                     raise IOError
+                except KeyError:
+                    # Try and infer
+                    done = False
+                    if svtype == "DEL" and "SVLEN" in r.INFO:
+                        svlen = r.INFO["SVLEN"]
+                        if isinstance(svlen, list):
+                            svlen = svlen[0]
+                        end = start + svlen
+                        done = True
 
+                    if not done:
+                        raise ValueError("Could not parse SV END", r, r.INFO)
             if no_translocations and chrom != chrom2:
                 continue
 
@@ -835,16 +858,21 @@ class CallSet:
                 wcol, w = w
 
             if r.ID in unique_ids or r.ID is None:
-                r_id = f"{r.CHROM}:f{r.POS}"
+                r_id = f"{r.CHROM}:{r.POS}.line_{vcf_index}"
+                unique_ids.add(r_id)
             else:
                 r_id = r.ID
+                unique_ids.add(r_id)
 
             d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id}
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
 
             if other_cols:
-                parsed = parse_cols_list(r, other_cols, {})
+                if other_cols == "all":
+                    parsed = parse_all_cols(r)
+                else:
+                    parsed = parse_cols_list(r, other_cols, {})
                 if not new_cols:
                     new_cols = list(parsed.keys())
                     # print("newcols", new_cols)
@@ -859,7 +887,7 @@ class CallSet:
         df = pd.DataFrame.from_records(res)
 
         # Normalize new columns, might be more than one column added per Col
-        if other_cols is not None:
+        if other_cols is not None and other_cols != "all":
             item_key = {(k.col, k.key): k for k in other_cols if k.norm is not None}
             for k, v in item_key.items():
                 for ec in new_cols:
@@ -910,7 +938,7 @@ class CallSet:
 
         else:
             df.rename({0: "chrom", 1: "start", 2: "end"}, axis="columns", inplace=True)
-            if df["chrom"].iloc[0][0] != "c":
+            if np.issubdtype(df['chrom'].dtype, np.number) or str(df['chrom'].iloc[0]).isdigit() or df["chrom"].iloc[0][0] != "c":
                 df["chrom"] = ["chr" + str(i) for i in df["chrom"]]
             df["chrom2"] = df["chrom"]
             df["start"] = df["start"].astype(int)
@@ -1182,14 +1210,14 @@ class CallSet:
             for idx, r in self.breaks_df.iterrows():
                 if format == "bed":
 
-                    v.append((r['chrom'], r['start'] - slop, r['start'] + slop, idx))
-                    v.append((r['chrom2'], r['end'] - slop, r['end'] + slop, idx))
+                    v.append((r['chrom'], r['start'] - slop, r['start'] + slop, idx, r["id"]))
+                    v.append((r['chrom2'], r['end'] - slop, r['end'] + slop, idx, r["id"]))
 
                 elif format == "bedpe":
                     v.append((r['chrom'], r['start'] - slop, r['start'] + slop, r["chrom2"], r["end"] - slop,
-                              r["end"] + slop, idx))
+                              r["end"] + slop, idx,  r["id"]))
 
-            v = ["\t".join([str(j) for j in i]) + "\n" for i in sorted(v, key=self._sort_func)]
+            v = ["\t".join([str(j) for j in i]) + "\n" for i in v]
             out.writelines(v)
 
 
@@ -1256,7 +1284,7 @@ def best_index(out_edges, key="q"):
     return irow, others
 
 
-def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., show_table=True, stratify=False,
+def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
              good_indexes_only=False):
 
     # Build a Maximum Bipartite Matching graph:
@@ -1275,6 +1303,8 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
     for query_idx, chrom, start, chrom2, end, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
                                                        dta["w"]):
 
+        if chrom == chrom2 and start == end:
+            end += 1  # prevent 0 width interval
         chrom, start, chrom2, end = sv_key(chrom, start, chrom2, end)
 
         ol_start = intersecter(tree, chrom, start, start + 1)
@@ -1289,6 +1319,10 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
         common_idxs = set([i[2] for i in ol_start]).intersection([i[2] for i in ol_end])
         if len(common_idxs) == 0:
             continue
+
+        # if start == 53268869:
+        #     print(common_idxs, chrom, start, end, file=stderr)
+        #     print(ol_start, ol_end, file=stderr)
 
         # Choose an index by highest weight/lowest total distance, meeting reciprocal_overlap threshold
         min_d = 1e12
@@ -1311,6 +1345,8 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
                 ref_size = ref_end - ref_start + 1e-3
 
                 ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
+                # if start == 53268869:
+                #     print(index, ol, query_size, ref_size, file=stderr)
 
                 if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
                     continue
@@ -1319,11 +1355,17 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
                     continue
 
             dis = abs(ref_start - start) + abs(ref_end - end)
+            # if start == 53268869:
+            #     print(dis, min_d, index, file=stderr)
             if dis < min_d:
                 min_d = dis
                 chosen_index = index
 
         if chosen_index is not None:
+
+            # if start == 53268869:
+            #     print(chosen_index, file=stderr)
+
             G.add_edge(('t', chosen_index), ('q', query_idx), dis=min_d, weight=w)
 
     good_idxs = {}
@@ -1331,7 +1373,9 @@ def quantify(ref_data, data, force_intersection=True, reciprocal_overlap=0., sho
     # Make partitions bipartite-matching i.e. one reference call matched to one query call
     for sub in nx.connected_components(G):
         sub = list(sub)
-
+        # if start == 53268869:
+        #     print(sub, file=stderr)
+        #     quit()
         if len(sub) == 2:  # One ref matches one query, easy case
             if sub[0][0] == "q":
                 good_idxs[sub[0][1]] = sub[1][1]
