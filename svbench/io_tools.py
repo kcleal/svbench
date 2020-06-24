@@ -1,4 +1,3 @@
-import click
 import ncls
 from collections import defaultdict
 import numpy as np
@@ -8,15 +7,14 @@ import datetime
 import pkg_resources
 import copy
 import pickle
-from sys import stderr, stdout, stdin
+from sys import stderr, stdin
 import gzip
-import resource
 import time
 from io import StringIO
 import networkx as nx
 from collections import Counter
 import pandas as pd
-import dill
+# import dill
 
 
 __all__ = ["Col", "CallSet", "concat_dfs"]
@@ -208,6 +206,8 @@ def get_strata(r, strat):
 
     if cp is None:
         cp = 0
+    if isinstance(cp, list):
+        cp = float(cp[0])
     return float(cp)
 
 
@@ -774,9 +774,9 @@ class CallSet:
                 vcf_index += 1
             except StopIteration:
                 break
-            except ValueError:  # Parsing error
-                print(f"Warning: skipping vcf index {vcf_index} {r}", file=stderr)
-                continue
+            # except ValueError:  # Parsing error
+            #     print(f"Warning: skipping vcf index {vcf_index} {r}", file=stderr)
+            #     continue
             # except Exception:
             #     print(f"Warning: parsing failed at vcf index {vcf_index} {r}", file=stderr)
             #     # print(next(reader), file=stderr)
@@ -799,8 +799,14 @@ class CallSet:
             except KeyError:
                 continue
 
-            if allowed_svtypes is not None and svtype not in allowed_svtypes:
-                continue
+            try:
+                if allowed_svtypes is not None and svtype not in allowed_svtypes:
+                    continue
+            except TypeError:
+                if isinstance(svtype, list):
+                    svtype = svtype[0]
+                    if allowed_svtypes is not None and svtype not in allowed_svtypes:
+                        continue
 
             if keep is not None and not check_passed(operations, r, keep):
                 continue
@@ -841,7 +847,13 @@ class CallSet:
                 continue
 
             if chrom == chrom2:
-                size = abs(end - start)
+                if "SVLEN" in r.INFO:
+                    svlen = r.INFO["SVLEN"]
+                    if isinstance(svlen, list):
+                        svlen = svlen[0]
+                    size = abs(svlen)
+                else:
+                    size = abs(end - start)
                 if min_size is not None and size < min_size:
                     continue
                 if max_size is not None and size > max_size:
@@ -864,7 +876,7 @@ class CallSet:
                 r_id = r.ID
                 unique_ids.add(r_id)
 
-            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id}
+            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype}
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
 
@@ -897,7 +909,7 @@ class CallSet:
                         df[ec] = v.norm(df[ec], self.kwargs)
 
         # Order df
-        base_cols = ["chrom", "start", "chrom2", "end", "w", "strata", "id"]
+        base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id"]
         df = df[[i for i in base_cols if i in df.columns] + new_cols]
 
         self.breaks_df = df
@@ -1300,14 +1312,15 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         raise ValueError("Interval tree has not been created, call add_intervals first")
 
     # # Link query calls to reference calls
-    for query_idx, chrom, start, chrom2, end, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
-                                                       dta["w"]):
+    for query_idx, chrom, start, chrom2, end, svtype, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
+                                                       dta["svtype"], dta["w"]):
 
         if chrom == chrom2 and start == end:
             end += 1  # prevent 0 width interval
         chrom, start, chrom2, end = sv_key(chrom, start, chrom2, end)
 
         ol_start = intersecter(tree, chrom, start, start + 1)
+
         if not ol_start:
             continue
 
@@ -1320,9 +1333,11 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         if len(common_idxs) == 0:
             continue
 
-        # if start == 53268869:
-        #     print(common_idxs, chrom, start, end, file=stderr)
-        #     print(ol_start, ol_end, file=stderr)
+        # if start == 7560339:
+        #     print(ol_start)
+        #     print(ol_end)
+        #     print(common_idxs)
+        #     quit()
 
         # Choose an index by highest weight/lowest total distance, meeting reciprocal_overlap threshold
         min_d = 1e12
@@ -1332,34 +1347,47 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
             ref_row = ref_bedpe.loc[index]
 
-            ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"], ref_row["chrom2"],
-                                                               ref_row["end"])
+            ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"],
+                                                               ref_row["chrom2"], ref_row["end"])
 
             # Make sure chromosomes match
             if chrom != ref_chrom or chrom2 != ref_chrom2:
                 continue
 
-            # If intra-chromosomal, check reciprocal overlap
-            if chrom == chrom2:
-                query_size = end - start + 1e-3
-                ref_size = ref_end - ref_start + 1e-3
+            # if ref_row["svtype"] != svtype:
+            #     continue
 
-                ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
-                # if start == 53268869:
-                #     print(index, ol, query_size, ref_size, file=stderr)
+            if svtype != "INS" and abs(ref_end - ref_start) > 50:
 
-                if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
-                    continue
+                # If intra-chromosomal, check reciprocal overlap
+                if chrom == chrom2:
+                    query_size = end - start + 1e-3
+                    ref_size = ref_end - ref_start + 1e-3
 
-                if force_intersection and ol == 0:
-                    continue
+                    ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
+                    # if start == 7560339:
+                    #     print(index, ol, query_size, ref_size, file=stderr)
+
+                    if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
+                        continue
+
+                    if force_intersection and ol == 0:
+                        continue
 
             dis = abs(ref_start - start) + abs(ref_end - end)
-            # if start == 53268869:
-            #     print(dis, min_d, index, file=stderr)
+
+            # if start == 7560339:
+            #     print(index)
+            #     print(dis, ref_start, ref_end, start, end)
+
             if dis < min_d:
                 min_d = dis
                 chosen_index = index
+
+        # if start == 7560339:
+        #     print(chosen_index)
+        #     print("here", dis, ref_start, ref_end, start, end)
+        #     quit()
 
         if chosen_index is not None:
 
@@ -1471,69 +1499,69 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     return data
 
 
-@click.command(context_settings=dict(
-    ignore_unknown_options=True, allow_extra_args=True
-))
-@click.argument('svbench_file', required=True, type=click.Path(exists=True))
-@click.argument('input_file', required=False, type=click.Path())
-@click.option("-o", "output", help="Output file", required=False, type=click.Path(), default="stdout",
-              show_default=True)
-@click.option("-c", "--col", help="Column name for model output", default="FORMAT,PROB", type=str,
-              show_default=True)
-@click.option("-m", "--method", help="Classifier method to use", default="predict_proba",
-              type=click.Choice(["predict", "predict_proba"]), show_default=True)
-# @click.argument('model_args', nargs=-1, type=click.UNPROCESSED)
-@click.pass_context
-def apply_model(ctx, **kwargs):
-    """Apply an SVBench classifier object to SV dataset."""
-    ctx.ensure_object(dict)
-    t0 = time.time()
-    d = dill.load(open(kwargs["svbench_file"], "rb"))
-    # d = pickle.load(open(kwargs["svbench_file"], "rb"))
-    d.dataset = None
-
-    # print(f"Model args: {kwargs['model_args']}", file=stderr)
-    extras = {}
-    if len(ctx.args) > 0:
-        for item in ctx.args:
-            if "=" not in item:
-                raise ValueError("Extra args need to supplied in space-separated string format as arg1=v1 arg2=v2 etc.")
-            k, v = item.split("=")
-            if isinstance(v, float):
-                extras[k] = float(v)
-            else:
-                extras[k] = v
-        print("Extra model args: ", extras, file=stderr)
-
-    d.set_properties(extras)
-
-    if not isinstance(d, CallSet):
-        raise ValueError("SVBench file is not instance of CallSet {}".format(type(d)))
-    if d.model is None:
-        raise ValueError("SVBench file has no model, attribute model=None")
-
-    new_col, add_to = None, None
-    if kwargs["col"].count(",") == 1:
-        add_to, new_col = kwargs["col"].split(",")
-        print("Adding column {} to {}".format(new_col, add_to), file=stderr)
-    else:
-        raise ValueError("col argument not understood")
-
-    if kwargs["input_file"] is None:
-        kwargs["input_file"] = "-"  # assume stdin
-
-    d.load(kwargs["input_file"])
-    # Add arguments to context insert_median, insert_stdev, read_length, out_name
-
-    if kwargs["output"] == "stdout" or kwargs["output"] == "-":
-        out = stdout
-    else:
-        out = open(kwargs["output"], "w")
-
-    with out:
-        if kwargs["method"] == "predict_proba":
-            d.predict_proba(col_name=new_col).save_as(out, new_col, add_to)
-
-    click.echo("SVBench complete, mem={} Mb, time={} h:m:s".format(
-        int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
-        str(datetime.timedelta(seconds=int(time.time() - t0)))), err=True)
+# @click.command(context_settings=dict(
+#     ignore_unknown_options=True, allow_extra_args=True
+# ))
+# @click.argument('svbench_file', required=True, type=click.Path(exists=True))
+# @click.argument('input_file', required=False, type=click.Path())
+# @click.option("-o", "output", help="Output file", required=False, type=click.Path(), default="stdout",
+#               show_default=True)
+# @click.option("-c", "--col", help="Column name for model output", default="FORMAT,PROB", type=str,
+#               show_default=True)
+# @click.option("-m", "--method", help="Classifier method to use", default="predict_proba",
+#               type=click.Choice(["predict", "predict_proba"]), show_default=True)
+# # @click.argument('model_args', nargs=-1, type=click.UNPROCESSED)
+# @click.pass_context
+# def apply_model(ctx, **kwargs):
+#     """Apply an SVBench classifier object to SV dataset."""
+#     ctx.ensure_object(dict)
+#     t0 = time.time()
+#     d = dill.load(open(kwargs["svbench_file"], "rb"))
+#     # d = pickle.load(open(kwargs["svbench_file"], "rb"))
+#     d.dataset = None
+#
+#     # print(f"Model args: {kwargs['model_args']}", file=stderr)
+#     extras = {}
+#     if len(ctx.args) > 0:
+#         for item in ctx.args:
+#             if "=" not in item:
+#                 raise ValueError("Extra args need to supplied in space-separated string format as arg1=v1 arg2=v2 etc.")
+#             k, v = item.split("=")
+#             if isinstance(v, float):
+#                 extras[k] = float(v)
+#             else:
+#                 extras[k] = v
+#         print("Extra model args: ", extras, file=stderr)
+#
+#     d.set_properties(extras)
+#
+#     if not isinstance(d, CallSet):
+#         raise ValueError("SVBench file is not instance of CallSet {}".format(type(d)))
+#     if d.model is None:
+#         raise ValueError("SVBench file has no model, attribute model=None")
+#
+#     new_col, add_to = None, None
+#     if kwargs["col"].count(",") == 1:
+#         add_to, new_col = kwargs["col"].split(",")
+#         print("Adding column {} to {}".format(new_col, add_to), file=stderr)
+#     else:
+#         raise ValueError("col argument not understood")
+#
+#     if kwargs["input_file"] is None:
+#         kwargs["input_file"] = "-"  # assume stdin
+#
+#     d.load(kwargs["input_file"])
+#     # Add arguments to context insert_median, insert_stdev, read_length, out_name
+#
+#     if kwargs["output"] == "stdout" or kwargs["output"] == "-":
+#         out = stdout
+#     else:
+#         out = open(kwargs["output"], "w")
+#
+#     with out:
+#         if kwargs["method"] == "predict_proba":
+#             d.predict_proba(col_name=new_col).save_as(out, new_col, add_to)
+#
+#     click.echo("SVBench complete, mem={} Mb, time={} h:m:s".format(
+#         int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
+#         str(datetime.timedelta(seconds=int(time.time() - t0)))), err=True)
