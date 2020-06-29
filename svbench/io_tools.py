@@ -290,7 +290,7 @@ def check_args(stratify, weight_field, keep, other_cols, size_range):
         if size_range[0] is not None and size_range[1] is not None:
             assert size_range[0] < size_range[1]
 
-    for item in (keep, weight_field, stratify, other_cols):
+    for item in (keep, weight_field, stratify):
         if item is None:
             continue
         if isinstance(item, list):
@@ -298,6 +298,12 @@ def check_args(stratify, weight_field, keep, other_cols, size_range):
                 assert isinstance(item2, Col)
         else:
             assert isinstance(item, Col)
+
+    if isinstance(other_cols, list):
+        for item2 in other_cols:
+            assert isinstance(item2, Col)
+    # elif other_cols != "all":
+    #     assert isinstance(other_cols, Col)
 
     if stratify is not None and (stratify.bins is None or not hasattr(stratify.bins, '__iter__')):
         raise ValueError(
