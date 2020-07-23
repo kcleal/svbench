@@ -1339,7 +1339,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         if len(common_idxs) == 0:
             continue
 
-        # if start == 7560339:
+        # if start == 74182157:
         #     print(ol_start)
         #     print(ol_end)
         #     print(common_idxs)
@@ -1382,35 +1382,40 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
             dis = abs(ref_start - start) + abs(ref_end - end)
 
-            # if start == 7560339:
+            # if start == 74182157:
             #     print(index)
+            #     print(ref_row)
             #     print(dis, ref_start, ref_end, start, end)
 
             if dis < min_d:
                 min_d = dis
                 chosen_index = index
 
-        # if start == 7560339:
+        # if start == 74182157:
         #     print(chosen_index)
         #     print("here", dis, ref_start, ref_end, start, end)
         #     quit()
 
         if chosen_index is not None:
-
-            # if start == 53268869:
-            #     print(chosen_index, file=stderr)
-
             G.add_edge(('t', chosen_index), ('q', query_idx), dis=min_d, weight=w)
+            # if start == 74182157:
+            #     print(ref_bedpe.loc[chosen_index])
+            #     print(dta.loc[query_idx])
+            #     quit()
+            #     print(chosen_index, file=stderr)
+            #     print(('t', chosen_index), ('q', query_idx))
+
 
     good_idxs = {}
     duplicate_idxs = {}
     # Make partitions bipartite-matching i.e. one reference call matched to one query call
     for sub in nx.connected_components(G):
         sub = list(sub)
-        # if start == 53268869:
-        #     print(sub, file=stderr)
-        #     quit()
+
         if len(sub) == 2:  # One ref matches one query, easy case
+            # if sub[0][1] == 1063 or sub[1][1] == 1063:
+            #     print(sub)
+            #     quit()
             if sub[0][0] == "q":
                 good_idxs[sub[0][1]] = sub[1][1]
             else:
@@ -1419,6 +1424,10 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
         else:
             bi_count = Counter([i[0] for i in sub])
+            # if any(i[1] == 1063 for i in sub):
+            #     print(sub)
+            #     print(bi_count)
+            #     quit()
             if bi_count["t"] == 1 or bi_count["q"] == 1:  # Choose best edge
                 ref_node = [i for i in sub if i[0] == "t"][0]
                 out_edges = list(G.edges(ref_node, data=True))
@@ -1435,6 +1444,8 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     if good_indexes_only:
         return [i in good_idxs for i in index]
+
+    # print(868 in good_idxs, 1063 in good_idxs)
 
     missing_ref_indexes = set(ref_bedpe.index).difference(set(good_idxs.values()))
 
