@@ -1086,7 +1086,7 @@ class CallSet:
         print(f"dataset={self.dataset}, caller={self.caller}, loaded rows: {len(df)}", file=stderr)
         return self
 
-    def write_to_vcf(self, path, new_col="PROB", add_to="FORMAT"):
+    def write_to_vcf(self, path, new_col="PROB", add_to="FORMAT", drop_missing=False):
 
         if isinstance(path, str):
             if path[-3:] == ".gz":
@@ -1164,6 +1164,8 @@ class CallSet:
                             val = "0"
                         else:
                             val = f"{vf:.4f}"
+                    elif drop_missing:
+                        continue
                     else:
                         val = "0"
 
