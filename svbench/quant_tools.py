@@ -11,7 +11,7 @@ import numpy as np
 __all__ = ["score", "reference_calls_found", "plot", ]
 
 
-def score(ref_data, query_data, rescore=True, force_intersection=True, reciprocal_overlap=0., stratify=False, n_jobs=1):
+def score(ref_data, query_data, rescore=True, force_intersection=True, reciprocal_overlap=0.3, stratify=False, n_jobs=1):
 
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}

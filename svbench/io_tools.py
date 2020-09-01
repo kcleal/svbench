@@ -1257,6 +1257,7 @@ def concat_dfs(cs_list):
 
 def sv_key(chrom, start, chrom2, end):
     # Return a sorted record
+
     if chrom2 < chrom:
         return chrom2, end, chrom, start
     if end < start:
@@ -1305,7 +1306,7 @@ def best_index(out_edges, key="q"):
 
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
-             good_indexes_only=False):
+             good_indexes_only=False, ref_size_bins=(30, 50, 100, 500, 1000, 5000, 10000)):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1340,12 +1341,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         common_idxs = set([i[2] for i in ol_start]).intersection([i[2] for i in ol_end])
         if len(common_idxs) == 0:
             continue
-
-        # if start == 74182157:
-        #     print(ol_start)
-        #     print(ol_end)
-        #     print(common_idxs)
-        #     quit()
 
         # Choose an index by highest weight/lowest total distance, meeting reciprocal_overlap threshold
         min_d = 1e12
@@ -1384,29 +1379,12 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
             dis = abs(ref_start - start) + abs(ref_end - end)
 
-            # if start == 74182157:
-            #     print(index)
-            #     print(ref_row)
-            #     print(dis, ref_start, ref_end, start, end)
-
             if dis < min_d:
                 min_d = dis
                 chosen_index = index
 
-        # if start == 74182157:
-        #     print(chosen_index)
-        #     print("here", dis, ref_start, ref_end, start, end)
-        #     quit()
-
         if chosen_index is not None:
             G.add_edge(('t', chosen_index), ('q', query_idx), dis=min_d, weight=w)
-            # if start == 74182157:
-            #     print(ref_bedpe.loc[chosen_index])
-            #     print(dta.loc[query_idx])
-            #     quit()
-            #     print(chosen_index, file=stderr)
-            #     print(('t', chosen_index), ('q', query_idx))
-
 
     good_idxs = {}
     duplicate_idxs = {}
@@ -1415,21 +1393,16 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         sub = list(sub)
 
         if len(sub) == 2:  # One ref matches one query, easy case
-            # if sub[0][1] == 1063 or sub[1][1] == 1063:
-            #     print(sub)
-            #     quit()
+
             if sub[0][0] == "q":
                 good_idxs[sub[0][1]] = sub[1][1]
-            else:
+            else:  # t first
                 good_idxs[sub[1][1]] = sub[0][1]
             continue
 
         else:
             bi_count = Counter([i[0] for i in sub])
-            # if any(i[1] == 1063 for i in sub):
-            #     print(sub)
-            #     print(bi_count)
-            #     quit()
+
             if bi_count["t"] == 1 or bi_count["q"] == 1:  # Choose best edge
                 ref_node = [i for i in sub if i[0] == "t"][0]
                 out_edges = list(G.edges(ref_node, data=True))
@@ -1459,6 +1432,10 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     data.breaks_df["ref_index"] = [good_idxs[i] if i in good_idxs else duplicate_idxs[i] if i in duplicate_idxs
                                   else None for i in index]
     data.breaks_df["FP"] = [not i and not j for i, j in zip(data.breaks_df["DTP"], data.breaks_df["TP"])]
+
+    data.breaks_df["ref_size"] = [abs(ref_bedpe["end"].loc[good_idxs[i]] - ref_bedpe["start"].loc[good_idxs[i]]) if
+                                  (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
+                                  for i in index]
 
     if stratify:
         rng = data.stratify_range
@@ -1509,10 +1486,14 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Precision",
                                                  "Recall", "F1"]]
     if show_table:
+
+        s = np.histogram([i for i, j in zip(data.breaks_df["ref_size"], data.breaks_df["TP"]) if i==i and j], ref_size_bins)
         try:
             print(data.scores.to_markdown(), file=stderr)
         except:
             print(data.scores.to_string(), file=stderr)
+        print(s, file=stderr)
+
     data.false_negative_indexes = missing_ref_indexes
 
     return data
