@@ -145,9 +145,11 @@ def col_parser(r, col, key, first=True):
             # raise ValueError("SVBench only supports one FORMAT column per vcf file, {} found", len(col))
         else:
             try:
+
                 ck = col[0][key]
-            except IndexError:
-                raise IndexError(f"The FORMAT column is missing a name: {key}")
+            except (IndexError, AttributeError):
+                ck = None
+                # raise IndexError(f"The FORMAT column is missing a name: {key}")
 
     else:
         try:
@@ -183,9 +185,13 @@ def check_passed(operations, r, keep):
             raise ValueError("Col.op must be set using 'keep' argument e.g. "
                              "Col('INFO', 'SU', op=eq, thresh=4)")
         ck = col_parser(r, item.col, item.key)
+        if ck is None and item.col != "FILTER":
+            raise KeyError("TypeError: >= 'NoneType' and 'int'. Check the svbench.Col key exists {}".format(str(keep)))
+
         if not operations.test(item.op, ck, item.thresh):
             passed = False
             break
+
     return passed
 
 
@@ -310,20 +316,28 @@ def check_args(stratify, weight_field, keep, other_cols, size_range):
             "Stratify must have an iterable for 'bins' argument e.g. Col('FORMAT', 'DV', bins=range(0, 60, 5))")
 
 
-def filter_by_size(df, size_range=(None, None)):
+def filter_by_size(df, size_range=(None, None), soft=True):
     l_before = len(df)
     if size_range[0] is not None or size_range[1] is not None:
         min_size, max_size = size_range
         drop = []
         for idx, start, end, chrom1, chrom2 in zip(df.index, df["start"], df["end"], df["chrom"], df["chrom2"]):
             if chrom1 == chrom2:
-                s = abs(end - start)
+                if "svlen" in df:
+                    s = df["svlen"].loc[idx]
+                else:
+                    s = abs(end - start)
+
                 if min_size is not None and s < min_size:
                     drop.append(idx)
                 elif max_size is not None and s > max_size:
                     drop.append(idx)
         print("Length before/after filter: {}, {}".format(l_before, l_before - len(drop)), file=stderr)
-        return df.drop(index=drop, inplace=False)
+        if not soft:
+            return df.drop(index=drop, inplace=False)
+        else:
+            df["size_filter_pass"] = [True if i not in drop else False for i in df.index]
+            return df
     return df
 
 
@@ -366,6 +380,7 @@ class CallSet:
         self.allowed_chroms = None
         self.min_size = None
         self.max_size = None
+        self.soft_size_filter = None
         self.other_cols = None
         self.model = None
         self.slop = None
@@ -395,6 +410,7 @@ class CallSet:
                                                                                "allowed_chroms",
                                                                                "min_size",
                                                                                "max_size",
+                                                                               "soft_size_filter",
                                                                                "other_cols",
                                                                                "slop",
                                                                                "break_cols",
@@ -560,7 +576,7 @@ class CallSet:
         n.set_properties(kwargs)
         return n
 
-    def filter_by_size(self, min_size=None, max_size=None, inplace=False):
+    def filter_by_size(self, min_size=None, max_size=None, inplace=False, soft=True):
         """Filter the loaded data defined in self.breaks_df by size (base-pairs).
 
         :param min_size: The minimum size threshold for the variant, size < min_size
@@ -591,7 +607,11 @@ class CallSet:
         drop = []
         for idx, start, end, chrom1, chrom2 in zip(df.index, df["start"], df["end"], df["chrom"], df["chrom2"]):
             if chrom1 == chrom2:
-                s = abs(end - start)
+                if "svlen" in df:
+                    s = df["svlen"].loc[idx]
+                else:
+                    s = abs(end - start)
+                # s = abs(end - start)
                 if min_size is not None and s < min_size:
                     drop.append(idx)
                 elif max_size is not None and s > max_size:
@@ -599,7 +619,10 @@ class CallSet:
         print("Filtered by size, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
                                                                                         l_before, l_before - len(drop)),
               file=stderr)
-        df.drop(index=drop, inplace=True)
+        if not soft:
+            df.drop(index=drop, inplace=True)
+        else:
+            df["size_filter_pass"] = [True if i not in drop else False for i in df.index]
         return cs
 
     def score_table(self):
@@ -705,7 +728,7 @@ class CallSet:
 
     def load_vcf(self, path, weight_field=None,
                  no_translocations=True, allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
-                 min_size=None, max_size=None,
+                 min_size=None, max_size=None, soft_size_filter=False,
                  other_cols=None):
         """Load variants from the vcf file path.
 
@@ -725,6 +748,7 @@ class CallSet:
         :param allowed_chroms:
         :param min_size:
         :param max_size:
+        :param soft_size_filter:
         :param other_cols:
         :return:
         """
@@ -747,6 +771,7 @@ class CallSet:
         allowed_chroms = self.allowed_chroms
         min_size = self.min_size
         max_size = self.max_size
+        soft_size_filter = self.soft_size_filter
         other_cols = self.other_cols
 
         operations = Operate()
@@ -773,6 +798,14 @@ class CallSet:
         else:
             reader = vcf.Reader(filename=path)
 
+        if other_cols == "all":
+            l = []
+            for k in reader.infos.keys():
+                l.append(Col("INFO", k))
+            for k in reader.formats.keys():
+                l.append(Col("FORMAT", k))
+            other_cols = l
+
         vcf_index = 0
         while True:
             try:
@@ -780,16 +813,7 @@ class CallSet:
                 vcf_index += 1
             except StopIteration:
                 break
-            # except ValueError:  # Parsing error
-            #     print(f"Warning: skipping vcf index {vcf_index} {r}", file=stderr)
-            #     continue
-            # except Exception:
-            #     print(f"Warning: parsing failed at vcf index {vcf_index} {r}", file=stderr)
-            #     # print(next(reader), file=stderr)
-            #     break
 
-        # for vcf_index, r in enumerate(reader):
-        #     print(r, file=stderr)
             chrom = r.CHROM
             if isinstance(chrom, int) or (isinstance(chrom, str) and chrom[0] != "c"):
                 chrom = "chr" + str(chrom)
@@ -798,8 +822,7 @@ class CallSet:
                 continue
 
             start = int(r.POS)
-            # print(r, file=stderr)
-            # print(r.INFO, file=stderr)
+
             try:
                 svtype = r.INFO["SVTYPE"]
             except KeyError:
@@ -817,6 +840,7 @@ class CallSet:
             if keep is not None and not check_passed(operations, r, keep):
                 continue
 
+            svlen = -1
             if svtype == "BND":
                 if "_2" in r.ID:  # Skip second part of BND record
                     continue
@@ -828,8 +852,7 @@ class CallSet:
                     end = int(r.ALT[0].pos)
             else:
                 chrom2 = chrom
-                # if style == "GIAB":
-                # print(r, type(r.INFO['END']), file=stderr)
+
                 try:
                     end = r.INFO["END"]
                     if isinstance(end, list):
@@ -852,18 +875,27 @@ class CallSet:
             if no_translocations and chrom != chrom2:
                 continue
 
+            size_filter = True
+
             if chrom == chrom2:
                 if "SVLEN" in r.INFO:
                     svlen = r.INFO["SVLEN"]
                     if isinstance(svlen, list):
                         svlen = svlen[0]
-                    size = abs(svlen)
+                    svlen = abs(svlen)
                 else:
-                    size = abs(end - start)
-                if min_size is not None and size < min_size:
-                    continue
-                if max_size is not None and size > max_size:
-                    continue
+                    svlen = abs(end - start)
+
+                if min_size is not None and svlen < min_size:
+                    if not soft_size_filter:
+                        continue
+                    else:
+                        size_filter = False
+                if max_size is not None and svlen > max_size:
+                    if not soft_size_filter:
+                        continue
+                    else:
+                        size_filter = False
 
             if allowed_chroms is not None and chrom2 not in allowed_chroms:
                 continue
@@ -882,18 +914,15 @@ class CallSet:
                 r_id = r.ID
                 unique_ids.add(r_id)
 
-            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype}
+            d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype,
+                 "size_filter_pass": size_filter, "svlen": abs(svlen)}
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
 
             if other_cols:
-                if other_cols == "all":
-                    parsed = parse_all_cols(r)
-                else:
-                    parsed = parse_cols_list(r, other_cols, {})
+                parsed = parse_cols_list(r, other_cols, {})
                 if not new_cols:
                     new_cols = list(parsed.keys())
-                    # print("newcols", new_cols)
                 d.update(parsed)
 
             res.append(d)
@@ -915,7 +944,7 @@ class CallSet:
                         df[ec] = v.norm(df[ec], self.kwargs)
 
         # Order df
-        base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id"]
+        base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id", "size_filter_pass", "svlen"]
         df = df[[i for i in base_cols if i in df.columns] + new_cols]
 
         self.breaks_df = df
@@ -962,6 +991,18 @@ class CallSet:
             df["start"] = df["start"].astype(int)
             df["end"] = df["end"].astype(int)
 
+        df["strata"] = [None] * len(df)
+        df["id"] = df.index
+        df["size_filter_pass"] = [True] * len(df)
+        df["w"] = [1] * len(df)
+        svlen = []
+        for chrom1, chrom2, start, end in zip(df["chrom"], df["chrom2"], df["start"], df["end"]):
+            if chrom1 == chrom2:
+                svlen.append(abs(end - start))
+            else:
+                svlen.append(-1)
+        df["svlen"] = svlen
+
         self.breaks_df = df
         print(f"dataset={self.dataset}, caller={self.caller}, loaded rows: {len(df)}", file=stderr)
 
@@ -970,7 +1011,7 @@ class CallSet:
     def load_csv(self, path, break_cols="chrA,posA,chrB,posB", sep=",", weight_field=None,
                  allowed_svtypes=None, keep=None, svtype_field="svtype", no_translocations=True, id_field=None,
                  allowed_chroms=None, stratify=None,
-                 min_size=None, max_size=None,
+                 min_size=None, max_size=None, soft_size_filter=False,
                  other_cols=None, drop_first_row=False,
                  add_chr_prefix=True):
 
@@ -1043,6 +1084,7 @@ class CallSet:
         if no_translocations:
             df = df[df["chrom"] == df["chrom2"]]
 
+        df["size_filter_pass"] = [True] * len(df)
         if min_size is not None or max_size is not None:
             drop = []
             for idx, start, end, chrom1, chrom2 in zip(df.index, df["start"], df["end"], df["chrom"], df["chrom2"]):
@@ -1053,7 +1095,10 @@ class CallSet:
                     elif max_size is not None and s > max_size:
                         drop.append(idx)
 
-            df.drop(index=drop, inplace=True)
+            if not soft_size_filter:
+                df.drop(index=drop, inplace=True)
+            else:
+                df["size_filter_pass"] = [i not in drop for i in df.index]
 
         if stratify is not None:
             df["strata"] = df_in[stratify.col].loc[df.index]
@@ -1086,7 +1131,7 @@ class CallSet:
         print(f"dataset={self.dataset}, caller={self.caller}, loaded rows: {len(df)}", file=stderr)
         return self
 
-    def write_to_vcf(self, path, new_col="PROB", add_to="FORMAT", drop_missing=False):
+    def write_to_vcf(self, path, new_col=None, add_to="FORMAT", drop_missing=False):
 
         if isinstance(path, str):
             if path[-3:] == ".gz":
@@ -1108,7 +1153,10 @@ class CallSet:
         if new_col is not None and not (add_to == "FORMAT" or add_to == "INFO"):
             raise ValueError("add_to argument must be FORMAT or INFO")
 
-        col_vals = {idx: v for idx, v in zip(self.breaks_df.id, self.breaks_df[new_col])}
+        if new_col is not None:
+            col_vals = {idx: v for idx, v in zip(self.breaks_df.id, self.breaks_df[new_col])}
+        else:
+            col_vals = {idx: None for idx in self.breaks_df.id}
 
         replace_val = False
         write_h_line = True
@@ -1148,7 +1196,9 @@ class CallSet:
 
                     if r_id in col_vals:
                         vf = col_vals[r_id]
-                        if vf == 1:
+                        if vf is None:
+                            val = None
+                        elif vf == 1:
                             val = "1"
                         elif vf == 0:
                             val = "0"
@@ -1157,8 +1207,9 @@ class CallSet:
 
                     elif f"{l[0]}:f{l[1]}" in col_vals:
                         vf = col_vals[f"{l[0]}:f{l[1]}"]
-
-                        if vf == 1:
+                        if vf is None:
+                            val = None
+                        elif vf == 1:
                             val = "1"
                         elif vf == 0:
                             val = "0"
@@ -1168,8 +1219,9 @@ class CallSet:
                         continue
                     else:
                         val = "0"
-
-                    if add_to == "FORMAT":
+                    if new_col is None:
+                        f_out.writelines("\t".join(l))
+                    elif add_to == "FORMAT":
                         vidx = None
                         if replace_val:
                             l8s = l[8].split(":")
@@ -1177,7 +1229,8 @@ class CallSet:
                             if vidx == len(l8s)-1:
                                 vidx = None  # Place at end
                         else:
-                            l[8] += ":" + new_col
+                            if new_col is not None:
+                                l[8] += ":" + new_col
                         # Value is added to each record in the row
                         for i in range(9, len(l)):
                             if i == len(l) - 1 and vidx is None:
@@ -1364,10 +1417,19 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
                 # If intra-chromosomal, check reciprocal overlap
                 if chrom == chrom2:
-                    query_size = end - start + 1e-3
-                    ref_size = ref_end - ref_start + 1e-3
+
+                    if "svlen" in dta:
+                        query_size = dta["svlen"].loc[query_idx] + 1e-6
+                    else:
+                        query_size = end - start + 1e-6
+
+                    if "svlen" in ref_row:
+                        ref_size = ref_row["svlen"] + 1e-6
+                    else:
+                        ref_size = ref_end - ref_start + 1e-3
 
                     ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
+
                     # if start == 7560339:
                     #     print(index, ol, query_size, ref_size, file=stderr)
 
@@ -1426,29 +1488,51 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     duplicate_idxs = {k: v for k, v in duplicate_idxs.items() if k not in good_idxs}
 
-    data.breaks_df["TP"] = [i in good_idxs for i in index]
-    data.breaks_df["DTP"] = [i in duplicate_idxs for i in index]
+    # size_f = data.breaks_df["size_filter_pass"]
+    # data.breaks_df["TP"] = [i in good_idxs and size_f.loc[i] for i in index]
+    # data.breaks_df["DTP"] = [i in duplicate_idxs and size_f.loc[i] for i in index]
 
-    data.breaks_df["ref_index"] = [good_idxs[i] if i in good_idxs else duplicate_idxs[i] if i in duplicate_idxs
+    df = data.breaks_df
+    df["TP"] = [i in good_idxs for i in index]
+    df["DTP"] = [i in duplicate_idxs for i in index]
+
+    df["ref_index"] = [good_idxs[i] if i in good_idxs else duplicate_idxs[i] if i in duplicate_idxs
                                   else None for i in index]
-    data.breaks_df["FP"] = [not i and not j for i, j in zip(data.breaks_df["DTP"], data.breaks_df["TP"])]
+    df["FP"] = [not i and not j for i, j in zip(df["DTP"], df["TP"])]
 
-    data.breaks_df["ref_size"] = [abs(ref_bedpe["end"].loc[good_idxs[i]] - ref_bedpe["start"].loc[good_idxs[i]]) if
-                                  (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
-                                  for i in index]
+    if "svlen" in ref_bedpe:
+        df["ref_size"] = [abs(ref_bedpe["svlen"].loc[good_idxs[i]]) if
+                          (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
+                          for i in index]
+
+    else:
+        df["ref_size"] = [abs(ref_bedpe["end"].loc[good_idxs[i]] - ref_bedpe["start"].loc[good_idxs[i]]) if
+                                      (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
+                                      for i in index]
+
+    if "size_filter_pass" not in ref_bedpe or "size_filter_pass" not in df:
+        df["quantified"] = [True] * len(df)
+        n_in_ref = len(ref_bedpe)
+    else:
+
+        ref_size_passed_idxs = set(ref_bedpe[ref_bedpe["size_filter_pass"]].index)
+        df["quantified"] = df["ref_index"].isin(ref_size_passed_idxs) | df["size_filter_pass"]
+        n_in_ref = ref_bedpe["size_filter_pass"].sum()
 
     if stratify:
         rng = data.stratify_range
     else:
         rng = [None]
 
-    dta = data.breaks_df
+    dta = df[df["quantified"]]
     ts = []
+
     for threshold in rng:
 
         if threshold is None:
+
             t = {"Total": len(dta),
-                 "Ref": len(ref_bedpe),
+                 "Ref": n_in_ref, #len(ref_bedpe),
                  "DTP": len(duplicate_idxs),
                  "TP": len(good_idxs),
                  "FP": len(index) - len(good_idxs) - len(duplicate_idxs),
@@ -1468,21 +1552,25 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         else:
 
             df = dta[dta["strata"] >= threshold]
+            if len(df) > 0:
+                t = {"Total": len(df),
+                     "Ref": n_in_ref, # len(ref_bedpe),
+                     "DTP": np.sum(np.in1d(df["DTP"], True)),
+                     "TP": np.sum(np.in1d(df["TP"], True)),
+                     "FP": np.sum(np.in1d(df["FP"], True)),
+                     "FN": None,
+                     "T >=": threshold
+                     }
+                sub_total = t["Total"] - t["DTP"]
+                if sub_total > 0:
+                    t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
+                              "Recall": round(float(t["TP"]) / t["Ref"], 4)})
+                    t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+                ts.append(t)
 
-            t = {"Total": len(df),
-                 "Ref": len(ref_bedpe),
-                 "DTP": np.sum(np.in1d(df["DTP"], True)),
-                 "TP": np.sum(np.in1d(df["TP"], True)),
-                 "FP": np.sum(np.in1d(df["FP"], True)),
-                 "FN": None,
-                 "T >=": threshold
-                 }
-            sub_total = t["Total"] - t["DTP"]
-            t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
-                      "Recall": round(float(t["TP"]) / t["Ref"], 4)})
-            t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
-            ts.append(t)
-
+    if len(ts) == 0:
+        print("Warning: precision/recall could not be determined", file=stderr)
+        return data
     data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Precision",
                                                  "Recall", "F1"]]
     if show_table:

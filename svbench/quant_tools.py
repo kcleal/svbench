@@ -70,6 +70,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=True, reciproca
 
 def calc_score(table, v, ref=None):
     # Assume pandas DataFrame
+    if len(table) == 0:
+        return None
     if v == "Total":
         return len(table)
     elif v in ("TP", "FP", "DTP"):
@@ -133,7 +135,7 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
         for cs in grp:
-            bed = cs.breaks_df
+            bed = cs.breaks_df[cs.breaks_df["quantified"]]
             if not duplicate_tp and "DTP" in bed.columns:
                 bed = bed[~bed["DTP"]]
             if "strata" not in bed.columns:
