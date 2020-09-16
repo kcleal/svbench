@@ -330,7 +330,7 @@ def filter_by_size(df, size_range=(None, None), soft=True):
 
                 if min_size is not None and s < min_size:
                     drop.append(idx)
-                elif max_size is not None and s > max_size:
+                elif max_size is not None and s >= max_size:
                     drop.append(idx)
         print("Length before/after filter: {}, {}".format(l_before, l_before - len(drop)), file=stderr)
         if not soft:
@@ -614,7 +614,7 @@ class CallSet:
                 # s = abs(end - start)
                 if min_size is not None and s < min_size:
                     drop.append(idx)
-                elif max_size is not None and s > max_size:
+                elif max_size is not None and s >= max_size:
                     drop.append(idx)
         print("Filtered by size, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
                                                                                         l_before, l_before - len(drop)),
@@ -852,7 +852,8 @@ class CallSet:
                     end = int(r.ALT[0].pos)
             else:
                 chrom2 = chrom
-
+                if "CHR2" in r.INFO:
+                    chrom2 = r.INFO["CHR2"]
                 try:
                     end = r.INFO["END"]
                     if isinstance(end, list):
@@ -891,7 +892,7 @@ class CallSet:
                         continue
                     else:
                         size_filter = False
-                if max_size is not None and svlen > max_size:
+                if max_size is not None and svlen >= max_size:
                     if not soft_size_filter:
                         continue
                     else:
@@ -1092,7 +1093,7 @@ class CallSet:
                     s = abs(end - start)
                     if min_size is not None and s < min_size:
                         drop.append(idx)
-                    elif max_size is not None and s > max_size:
+                    elif max_size is not None and s >= max_size:
                         drop.append(idx)
 
             if not soft_size_filter:
