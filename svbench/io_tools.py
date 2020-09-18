@@ -1227,21 +1227,24 @@ class CallSet:
                         if replace_val:
                             l8s = l[8].split(":")
                             vidx = [idx for idx, vv in enumerate(l8s) if vv == new_col][0]
-                            if vidx == len(l8s)-1:
-                                vidx = None  # Place at end
+                            # if vidx == len(l8s)-1:
+                            #     vidx = None  # Place at end
                         else:
                             if new_col is not None:
                                 l[8] += ":" + new_col
                         # Value is added to each record in the row
+
                         for i in range(9, len(l)):
-                            if i == len(l) - 1 and vidx is None:
-                                l[i] = l[i].strip() + ":" + val + "\n"
-                            elif vidx is None:
-                                l[i] = l[i] + ":" + val
+                            # if i == len(l) - 1 and vidx is None:
+                            #     l[i] = l[i].strip() + ":" + val + "\n"
+                            if vidx is None:
+                                 l[i] = l[i] + ":" + val
                             else:
                                 lis = l[i].split(":")
                                 lis[vidx] = val
                                 l[i] = ":".join(lis)
+                                if i == len(l) - 1:
+                                    l[i] += "\n"
                         f_out.writelines("\t".join(l))
                     elif add_to == "INFO":
                         l[7] += f";{new_col}={val}"
@@ -1541,13 +1544,16 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                  "T >=": None
                  }
             sub_total = t["Total"] - t["DTP"]
-            t.update({"Precision": round(float(t["TP"]) / sub_total, 4),  # Note DTP are not included
-                      "Sensitivity": round(float(t["TP"]) / t["Ref"], 4),
-                      "Recall": round(float(t["TP"]) / t["Ref"], 4)})
-            if (t["Precision"] + t["Recall"]) > 0:
-                t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+            if sub_total > 0:
+                t.update({"Precision": round(float(t["TP"]) / sub_total, 4),  # Note DTP are not included
+                          "Sensitivity": round(float(t["TP"]) / t["Ref"], 4),
+                          "Recall": round(float(t["TP"]) / t["Ref"], 4)})
+                if (t["Precision"] + t["Recall"]) > 0:
+                    t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+                else:
+                    t["F1"] = None
             else:
-                t["F1"] = None
+                t.update({"F1": None, "Precision": None, "Recall": None})
             ts.append(t)
 
         else:
@@ -1567,6 +1573,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
                               "Recall": round(float(t["TP"]) / t["Ref"], 4)})
                     t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+
                 ts.append(t)
 
     if len(ts) == 0:
