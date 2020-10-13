@@ -11,7 +11,8 @@ import numpy as np
 __all__ = ["score", "reference_calls_found", "plot", ]
 
 
-def score(ref_data, query_data, rescore=True, force_intersection=True, reciprocal_overlap=0.3, stratify=False, n_jobs=1):
+def score(ref_data, query_data, rescore=True, force_intersection=True, reciprocal_overlap=0., stratify=False, n_jobs=1,
+          ref_size_bins=(30, 50, 500, 5000, 260000000)):
 
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}
@@ -25,7 +26,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=True, reciproca
     if isinstance(query_data, CallSet):
         query = query_data
         print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
-        query = quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify)
+        query = quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
+                         ref_size_bins=ref_size_bins)
         print("-" * 45, file=stderr)
         return query
 
@@ -50,7 +52,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=True, reciproca
 
             if n_jobs == 1:
                 print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
-                quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify)
+                quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
+                         ref_size_bins=ref_size_bins)
                 print("-"*45, file=stderr)
 
             else:
@@ -138,7 +141,7 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
             bed = cs.breaks_df[cs.breaks_df["quantified"]]
             if not duplicate_tp and "DTP" in bed.columns:
                 bed = bed[~bed["DTP"]]
-            if "strata" not in bed.columns:
+            if "strata" not in bed.columns or cs.stratify_range is None:
                 ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=next(markers))
 
             else:

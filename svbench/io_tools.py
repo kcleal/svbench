@@ -15,6 +15,7 @@ import networkx as nx
 from collections import Counter
 import pandas as pd
 # import dill
+import os
 
 
 __all__ = ["Col", "CallSet", "concat_dfs"]
@@ -80,13 +81,14 @@ class NSV:
         return self.__class__, (self.starts, self.ends, self.ids)
 
 
-def get_interval_arrays(regions, slop, bedpe=False):
+def get_interval_arrays(regions, slop, interval_type="breakpoint"):
+
     chrom_interval_start = defaultdict(list)
     chrom_interval_end = defaultdict(list)
     chrom_interval_index = defaultdict(list)
 
     # Make a region for each breakpoint
-    if not bedpe:
+    if interval_type == "breakpoint":
         for c1, s, c2, e, index in regions:
             chrom_interval_start[c1].append(s - slop)
             chrom_interval_end[c1].append(s + slop)
@@ -96,7 +98,7 @@ def get_interval_arrays(regions, slop, bedpe=False):
             chrom_interval_end[c2].append(e + slop)
             chrom_interval_index[c2].append(index)
 
-    else:
+    elif interval_type == "bedpe":
         for c1, s1, e1, c2, s2, e2, index in regions:
             chrom_interval_start[c1].append(s1)
             chrom_interval_end[c1].append(e1)
@@ -105,6 +107,12 @@ def get_interval_arrays(regions, slop, bedpe=False):
             chrom_interval_start[c2].append(s2)
             chrom_interval_end[c2].append(e2)
             chrom_interval_index[c2].append(index)
+
+    elif interval_type == "bed":
+        for c1, s, c2, e, index in regions:
+            chrom_interval_start[c1].append(s)
+            chrom_interval_end[c1].append(e)
+            chrom_interval_index[c1].append(index)
 
     return ({k: np.array(v).astype(int) for k, v in chrom_interval_start.items()},
            {k: np.array(v).astype(int) for k, v in chrom_interval_end.items()},
@@ -128,8 +136,8 @@ def make_ncls_table(chrom_interval_start, chrom_interval_end, chrom_interval_ind
             for k in chrom_interval_start}
 
 
-def make_tree(regions, slop=250, bedpe=False):
-    chrom_interval_start, chrom_interval_end, chrom_interval_index = get_interval_arrays(regions, slop, bedpe)
+def make_tree(regions, slop=250, interval_type="breakpoint"):
+    chrom_interval_start, chrom_interval_end, chrom_interval_index = get_interval_arrays(regions, slop, interval_type)
     return make_ncls_table(chrom_interval_start, chrom_interval_end, chrom_interval_index)
 
 
@@ -394,8 +402,10 @@ class CallSet:
         self.new_col = None
         self.add_to = None
         self.add_chr_prefix = True
-        self.id_field=None
+        self.id_field = None
         self.temp = None
+        self.include_bed = None
+        self.include_if = "both"
 
         # Track defaults for persistence
         self.default_params = {k: v for k, v in self.__dict__.items() if k in {"bedpe",
@@ -512,17 +522,22 @@ class CallSet:
     #     self.add_intervals(self.slop)
     #     return self
 
-    def add_intervals(self, slop=250):
+    def add_intervals(self, slop=250, interval_type="breakpoint"):
         """Adds intervals to loaded data defined in self.breaks_df.
 
         :param slop: The distance to add and subtract from each variant position.
         :type slop: int
         :returns: self
         :rtype: svbench.CallSet"""
+        if interval_type not in ("breakpoint", "bed", "bedpe"):
+            raise ValueError("interval_type must be one of: 'breakpoint', 'bed', 'bedpe'")
+
         self.slop = slop
         df = self.breaks_df
-
-        self.tree = make_tree(list(zip(df["chrom"], df["start"], df["chrom2"], df["end"], df.index)), slop=slop)
+        if df is None or len(df) == 0:
+            raise ValueError("breaks_df not found")
+        self.tree = make_tree(list(zip(df["chrom"], df["start"], df["chrom2"], df["end"], df.index)), slop=slop,
+                              interval_type=interval_type)
         return self
 
     def reset_arguments(self):
@@ -729,7 +744,7 @@ class CallSet:
     def load_vcf(self, path, weight_field=None,
                  no_translocations=True, allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
                  min_size=None, max_size=None, soft_size_filter=False,
-                 other_cols=None):
+                 other_cols=None, include_bed=None, include_if="both"):
         """Load variants from the vcf file path.
 
         :param path: The path to the vcf input file
@@ -750,6 +765,8 @@ class CallSet:
         :param max_size:
         :param soft_size_filter:
         :param other_cols:
+        :param include_bed:
+        :param include_if:
         :return:
         """
 
@@ -759,6 +776,15 @@ class CallSet:
         check_args(stratify, weight_field, keep, other_cols, (min_size, max_size))
 
         self.set_args(locals())  # Overwrite default params
+
+        ol_tree = None
+        if include_bed:
+            if isinstance(include_bed, CallSet):
+                assert include_bed.tree is not None
+                assert include_if in ("both", "single")
+                ol_tree = include_bed.tree
+            else:
+                raise ValueError("include_bed must be of type svbench.CallSet")
 
         # Load instance parameters, these may have been set previously
         # style = self.style
@@ -796,6 +822,7 @@ class CallSet:
 
             reader = vcf.Reader(fsock=temp)
         else:
+            assert os.path.exists(path)
             reader = vcf.Reader(filename=path)
 
         if other_cols == "all":
@@ -807,12 +834,16 @@ class CallSet:
             other_cols = l
 
         vcf_index = 0
+        not_in_include = 0
         while True:
             try:
                 r = next(reader)
                 vcf_index += 1
             except StopIteration:
                 break
+
+            ol_start = False
+            ol_end = False
 
             chrom = r.CHROM
             if isinstance(chrom, int) or (isinstance(chrom, str) and chrom[0] != "c"):
@@ -822,6 +853,13 @@ class CallSet:
                 continue
 
             start = int(r.POS)
+
+            if ol_tree and chrom in ol_tree:
+                if any(ol_tree[chrom].ncls.find_overlap(start, start + 1)):
+                    ol_start = True
+                if not ol_start and include_if == "both":
+                    not_in_include += 1
+                    continue
 
             try:
                 svtype = r.INFO["SVTYPE"]
@@ -854,6 +892,8 @@ class CallSet:
                 chrom2 = chrom
                 if "CHR2" in r.INFO:
                     chrom2 = r.INFO["CHR2"]
+                    if chrom2[0] != "c":
+                        chrom2 = "chr" + chrom2
                 try:
                     end = r.INFO["END"]
                     if isinstance(end, list):
@@ -873,8 +913,19 @@ class CallSet:
 
                     if not done:
                         raise ValueError("Could not parse SV END", r, r.INFO)
+
             if no_translocations and chrom != chrom2:
                 continue
+
+            if ol_tree and chrom2 in ol_tree:
+                if any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
+                    ol_end = True
+                if not ol_end and include_if == "both":
+                    not_in_include += 1
+                    continue
+                elif not ol_start and not ol_end and include_if == "single":
+                    not_in_include += 1
+                    continue
 
             size_filter = True
 
@@ -886,6 +937,8 @@ class CallSet:
                     svlen = abs(svlen)
                 else:
                     svlen = abs(end - start)
+                    if svlen < 2 and "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
+                        svlen = min_size
 
                 if min_size is not None and svlen < min_size:
                     if not soft_size_filter:
@@ -917,6 +970,7 @@ class CallSet:
 
             d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype,
                  "size_filter_pass": size_filter, "svlen": abs(svlen)}
+
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
 
@@ -956,7 +1010,7 @@ class CallSet:
 
         print(f"dataset={self.dataset}, caller={self.caller}, loaded rows: {len(df)}", file=stderr)
         print("columns:", list(self.breaks_df.columns), file=stderr)
-
+        print("n not in include: {}".format(not_in_include), file=stderr)
         return self
 
     def load_bed(self, path, drop_first_row=False, bedpe=False):
@@ -1363,7 +1417,7 @@ def best_index(out_edges, key="q"):
 
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
-             good_indexes_only=False, ref_size_bins=(30, 50, 100, 500, 1000, 5000, 10000)):
+             good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000)):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1394,6 +1448,10 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         if not ol_end:
             continue
 
+        # if start == 57861455:
+        #     print(ol_start)
+        #     print(ol_end)
+
         # Get the ref_data index
         common_idxs = set([i[2] for i in ol_start]).intersection([i[2] for i in ol_end])
         if len(common_idxs) == 0:
@@ -1405,11 +1463,16 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
         for index in common_idxs:
 
-            ref_row = ref_bedpe.loc[index]
+            try:
+                ref_row = ref_bedpe.loc[index]
+            except IndexError:
+                raise ("Index error", index, " Try re-setting intervals")
 
             ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"],
                                                                ref_row["chrom2"], ref_row["end"])
 
+            # if start == 57861455:
+            #     print(chrom, ref_chrom, chrom2, ref_chrom2, svtype)
             # Make sure chromosomes match
             if chrom != ref_chrom or chrom2 != ref_chrom2:
                 continue
@@ -1417,7 +1480,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             # if ref_row["svtype"] != svtype:
             #     continue
 
-            if svtype != "INS" and abs(ref_end - ref_start) > 50:
+            if svtype != "INS":  # and abs(ref_end - ref_start) > 50:
 
                 # If intra-chromosomal, check reciprocal overlap
                 if chrom == chrom2:
@@ -1433,24 +1496,29 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                         ref_size = ref_end - ref_start + 1e-3
 
                     ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
+                    # if start == 57861455:
+                    #     print("here", reciprocal_overlap, force_intersection, ol)
 
-                    # if start == 7560339:
-                    #     print(index, ol, query_size, ref_size, file=stderr)
-
-                    if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
-                        continue
+                    if reciprocal_overlap != 0:
+                        if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
+                            continue
 
                     if force_intersection and ol == 0:
                         continue
 
             dis = abs(ref_start - start) + abs(ref_end - end)
-
             if dis < min_d:
                 min_d = dis
                 chosen_index = index
 
         if chosen_index is not None:
             G.add_edge(('t', chosen_index), ('q', query_idx), dis=min_d, weight=w)
+
+        # if start == 57861455:
+        #     print(common_idxs)
+        #     print(chosen_index)
+        #     print(chrom, ref_chrom, chrom2, ref_chrom2, dis < min_d, index)
+        #     quit()
 
     good_idxs = {}
     duplicate_idxs = {}
@@ -1523,7 +1591,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         df["quantified"] = df["ref_index"].isin(ref_size_passed_idxs) | df["size_filter_pass"]
         n_in_ref = ref_bedpe["size_filter_pass"].sum()
 
-    if stratify:
+    if stratify and data.stratify_range is not None:
         rng = data.stratify_range
     else:
         rng = [None]
@@ -1572,7 +1640,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                 if sub_total > 0:
                     t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
                               "Recall": round(float(t["TP"]) / t["Ref"], 4)})
-                    t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"])), 4)})
+                    t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"] + 1e-6)), 4)})
 
                 ts.append(t)
 
@@ -1583,81 +1651,33 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                                                  "Recall", "F1"]]
     if show_table:
 
-        s = np.histogram([i for i, j in zip(data.breaks_df["ref_size"], data.breaks_df["TP"]) if i==i and j], ref_size_bins)
+        dat = data.breaks_df[~data.breaks_df["DTP"]]
+
+        s = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
         try:
             print(data.scores.to_markdown(), file=stderr)
         except:
             print(data.scores.to_string(), file=stderr)
         print(s, file=stderr)
 
+        if "svlen" in dat and "svlen" in ref_bedpe:
+
+            s2 = np.histogram(ref_bedpe["svlen"], ref_size_bins)
+            print("Sensitivity over size ranges:", file=stderr)
+            print(np.round(s[0] / s2[0], 4), file=stderr)
+
+            corrected_size = [i if j else k for i, j, k in zip(dat["ref_size"], dat["TP"], dat["svlen"])]
+            binned = np.digitize(corrected_size, ref_size_bins)
+
+            tp_table = {i: [0, 0] for i in range(len(ref_size_bins) + 1)}
+            for tp, bin_id in zip(dat["TP"], binned):
+                if tp:
+                    tp_table[bin_id][0] += 1
+                else:
+                    tp_table[bin_id][1] += 1
+            prec = np.array([i / (i + j) if i + j > 0 else 0 for i, j in list(tp_table.values())])
+            print("Precision over size ranges:", file=stderr)
+            print(np.round(prec, 4), file=stderr)
     data.false_negative_indexes = missing_ref_indexes
 
     return data
-
-
-# @click.command(context_settings=dict(
-#     ignore_unknown_options=True, allow_extra_args=True
-# ))
-# @click.argument('svbench_file', required=True, type=click.Path(exists=True))
-# @click.argument('input_file', required=False, type=click.Path())
-# @click.option("-o", "output", help="Output file", required=False, type=click.Path(), default="stdout",
-#               show_default=True)
-# @click.option("-c", "--col", help="Column name for model output", default="FORMAT,PROB", type=str,
-#               show_default=True)
-# @click.option("-m", "--method", help="Classifier method to use", default="predict_proba",
-#               type=click.Choice(["predict", "predict_proba"]), show_default=True)
-# # @click.argument('model_args', nargs=-1, type=click.UNPROCESSED)
-# @click.pass_context
-# def apply_model(ctx, **kwargs):
-#     """Apply an SVBench classifier object to SV dataset."""
-#     ctx.ensure_object(dict)
-#     t0 = time.time()
-#     d = dill.load(open(kwargs["svbench_file"], "rb"))
-#     # d = pickle.load(open(kwargs["svbench_file"], "rb"))
-#     d.dataset = None
-#
-#     # print(f"Model args: {kwargs['model_args']}", file=stderr)
-#     extras = {}
-#     if len(ctx.args) > 0:
-#         for item in ctx.args:
-#             if "=" not in item:
-#                 raise ValueError("Extra args need to supplied in space-separated string format as arg1=v1 arg2=v2 etc.")
-#             k, v = item.split("=")
-#             if isinstance(v, float):
-#                 extras[k] = float(v)
-#             else:
-#                 extras[k] = v
-#         print("Extra model args: ", extras, file=stderr)
-#
-#     d.set_properties(extras)
-#
-#     if not isinstance(d, CallSet):
-#         raise ValueError("SVBench file is not instance of CallSet {}".format(type(d)))
-#     if d.model is None:
-#         raise ValueError("SVBench file has no model, attribute model=None")
-#
-#     new_col, add_to = None, None
-#     if kwargs["col"].count(",") == 1:
-#         add_to, new_col = kwargs["col"].split(",")
-#         print("Adding column {} to {}".format(new_col, add_to), file=stderr)
-#     else:
-#         raise ValueError("col argument not understood")
-#
-#     if kwargs["input_file"] is None:
-#         kwargs["input_file"] = "-"  # assume stdin
-#
-#     d.load(kwargs["input_file"])
-#     # Add arguments to context insert_median, insert_stdev, read_length, out_name
-#
-#     if kwargs["output"] == "stdout" or kwargs["output"] == "-":
-#         out = stdout
-#     else:
-#         out = open(kwargs["output"], "w")
-#
-#     with out:
-#         if kwargs["method"] == "predict_proba":
-#             d.predict_proba(col_name=new_col).save_as(out, new_col, add_to)
-#
-#     click.echo("SVBench complete, mem={} Mb, time={} h:m:s".format(
-#         int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1e6),
-#         str(datetime.timedelta(seconds=int(time.time() - t0)))), err=True)
