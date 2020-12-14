@@ -14,7 +14,6 @@ from io import StringIO
 import networkx as nx
 from collections import Counter
 import pandas as pd
-# import dill
 import os
 
 
@@ -397,6 +396,7 @@ class CallSet:
         self.drop_first_row = False
         self.svtype_field = "svtype"
         self.scores = None
+        self.size_scores = None
         self.false_negative_indexes = None
         self.kind = None
         self.new_col = None
@@ -1432,6 +1432,8 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         raise ValueError("Interval tree has not been created, call add_intervals first")
 
     # # Link query calls to reference calls
+    if dta is None:
+        return
     for query_idx, chrom, start, chrom2, end, svtype, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
                                                        dta["svtype"], dta["w"]):
 
@@ -1653,31 +1655,31 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
         dat = data.breaks_df[~data.breaks_df["DTP"]]
 
-        s = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
+        s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
         try:
             print(data.scores.to_markdown(), file=stderr)
         except:
             print(data.scores.to_string(), file=stderr)
-        print(s, file=stderr)
+
+        size_brackets = []
+        for idx in range(len(s_ranges) - 1):
+            size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
 
         if "svlen" in dat and "svlen" in ref_bedpe:
+            size_brackets.append("All ranges")
+            s = np.append(s, [s.sum()])
+            s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
+            s2 = np.append(s2, [s2.sum()])
+            sens = s / s2
+            s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
+            s_fp = np.append(s_fp, [s_fp.sum()])
+            prec = s / (s + s_fp)
+            f1 = 2 * ((prec * sens) / (prec + sens))
+            df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
+            data.size_scores = df_sizes
+            print("Scores over side ranges:", file=stderr)
+            print(df_sizes.to_string(), file=stderr)
 
-            s2 = np.histogram(ref_bedpe["svlen"], ref_size_bins)
-            print("Sensitivity over size ranges:", file=stderr)
-            print(np.round(s[0] / s2[0], 4), file=stderr)
-
-            corrected_size = [i if j else k for i, j, k in zip(dat["ref_size"], dat["TP"], dat["svlen"])]
-            binned = np.digitize(corrected_size, ref_size_bins)
-
-            tp_table = {i: [0, 0] for i in range(len(ref_size_bins) + 1)}
-            for tp, bin_id in zip(dat["TP"], binned):
-                if tp:
-                    tp_table[bin_id][0] += 1
-                else:
-                    tp_table[bin_id][1] += 1
-            prec = np.array([i / (i + j) if i + j > 0 else 0 for i, j in list(tp_table.values())])
-            print("Precision over size ranges:", file=stderr)
-            print(np.round(prec, 4), file=stderr)
     data.false_negative_indexes = missing_ref_indexes
 
     return data
