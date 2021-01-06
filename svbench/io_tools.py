@@ -1417,7 +1417,8 @@ def best_index(out_edges, key="q"):
 
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
-             good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000)):
+             good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=False,
+             pct_size=0.25):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1433,7 +1434,14 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     # # Link query calls to reference calls
     if dta is None:
+        ts = [{"Total": None, "Ref": len(ref_bedpe), "DTP": None, "TP": None, "FP": None, "FN": None, "T >=": None,
+               "Precision": None, "Recall": None, "F1": None}]
+        # return data
+        data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Precision",
+                                                     "Recall", "F1"]]
+        data.false_negative_indexes = ref_bedpe.index
         return
+
     for query_idx, chrom, start, chrom2, end, svtype, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
                                                        dta["svtype"], dta["w"]):
 
@@ -1498,6 +1506,11 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                         ref_size = ref_end - ref_start + 1e-3
 
                     ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
+
+                    if pct_size:
+                        pct = min(ref_size, query_size) / max(ref_size, query_size)
+                        if pct < pct_size:
+                            continue
                     # if start == 57861455:
                     #     print("here", reciprocal_overlap, force_intersection, ol)
 
@@ -1556,12 +1569,11 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     if good_indexes_only:
         return [i in good_idxs for i in index]
 
-    # print(868 in good_idxs, 1063 in good_idxs)
-
     missing_ref_indexes = set(ref_bedpe.index).difference(set(good_idxs.values()))
-
-    duplicate_idxs = {k: v for k, v in duplicate_idxs.items() if k not in good_idxs}
-
+    if allow_duplicate_tp:
+        duplicate_idxs = {k: v for k, v in duplicate_idxs.items() if k not in good_idxs}
+    else:
+        duplicate_idxs = {}
     # size_f = data.breaks_df["size_filter_pass"]
     # data.breaks_df["TP"] = [i in good_idxs and size_f.loc[i] for i in index]
     # data.breaks_df["DTP"] = [i in duplicate_idxs and size_f.loc[i] for i in index]
@@ -1648,37 +1660,42 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     if len(ts) == 0:
         print("Warning: precision/recall could not be determined", file=stderr)
-        return data
+        ts = [{"Total": None, "Ref": len(ref_bedpe), "DTP": None, "TP": None, "FP": None, "FN": None, "T >=": None,
+               "Precision": None, "Recall": None, "F1": None}]
+        data.false_negative_indexes = ref_bedpe.index
+        # return data
     data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Precision",
                                                  "Recall", "F1"]]
     if show_table:
 
         dat = data.breaks_df[~data.breaks_df["DTP"]]
+        if "ref_size" not in dat.columns:
+            print("No TP calls found", file=stderr)
+        else:
+            s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
+            try:
+                print(data.scores.to_markdown(), file=stderr)
+            except:
+                print(data.scores.to_string(), file=stderr)
 
-        s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
-        try:
-            print(data.scores.to_markdown(), file=stderr)
-        except:
-            print(data.scores.to_string(), file=stderr)
+            size_brackets = []
+            for idx in range(len(s_ranges) - 1):
+                size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
 
-        size_brackets = []
-        for idx in range(len(s_ranges) - 1):
-            size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
-
-        if "svlen" in dat and "svlen" in ref_bedpe:
-            size_brackets.append("All ranges")
-            s = np.append(s, [s.sum()])
-            s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
-            s2 = np.append(s2, [s2.sum()])
-            sens = s / s2
-            s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
-            s_fp = np.append(s_fp, [s_fp.sum()])
-            prec = s / (s + s_fp)
-            f1 = 2 * ((prec * sens) / (prec + sens))
-            df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
-            data.size_scores = df_sizes
-            print("Scores over side ranges:", file=stderr)
-            print(df_sizes.to_string(), file=stderr)
+            if "svlen" in dat and "svlen" in ref_bedpe:
+                size_brackets.append("All ranges")
+                s = np.append(s, [s.sum()])
+                s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
+                s2 = np.append(s2, [s2.sum()])
+                sens = s / s2
+                s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
+                s_fp = np.append(s_fp, [s_fp.sum()])
+                prec = s / (s + s_fp)
+                f1 = 2 * ((prec * sens) / (prec + sens))
+                df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
+                data.size_scores = df_sizes
+                print("Scores over side ranges:", file=stderr)
+                print(df_sizes.to_string(), file=stderr)
 
     data.false_negative_indexes = missing_ref_indexes
 

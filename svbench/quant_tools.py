@@ -12,7 +12,7 @@ __all__ = ["score", "reference_calls_found", "plot", ]
 
 
 def score(ref_data, query_data, rescore=True, force_intersection=True, reciprocal_overlap=0., stratify=False, n_jobs=1,
-          ref_size_bins=(30, 50, 500, 5000, 260000000)):
+          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=False, pct_size=0.25):
 
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}
@@ -27,7 +27,7 @@ def score(ref_data, query_data, rescore=True, force_intersection=True, reciproca
         query = query_data
         print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
         query = quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
-                         ref_size_bins=ref_size_bins)
+                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size)
         print("-" * 45, file=stderr)
         return query
 
@@ -53,7 +53,7 @@ def score(ref_data, query_data, rescore=True, force_intersection=True, reciproca
             if n_jobs == 1:
                 print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
                 quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
-                         ref_size_bins=ref_size_bins)
+                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size)
                 print("-"*45, file=stderr)
 
             else:
@@ -122,8 +122,7 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
     markers = itertools.cycle(['o', '>', '<', '+', 'D', 's', 11, 10, '*', 'X', 3, '_'])
 
     plots = {}
-    for ref_name, grp in itertools.groupby(sorted(query_data, key=lambda qq: (qq.dataset, qq.caller)),
-                                           key=lambda q: q.dataset):
+    for ref_name, grp in itertools.groupby(sorted(query_data, key=lambda qq: qq.dataset), key=lambda q: q.dataset):
 
         if refs is not None and ref_name not in refs:
             continue
@@ -138,23 +137,26 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
         for cs in grp:
-            bed = cs.breaks_df[cs.breaks_df["quantified"]]
-            if not duplicate_tp and "DTP" in bed.columns:
-                bed = bed[~bed["DTP"]]
-            if "strata" not in bed.columns or cs.stratify_range is None:
-                ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=next(markers))
+            if cs.breaks_df is not None:
+                bed = cs.breaks_df[cs.breaks_df["quantified"]]
+                if not duplicate_tp and "DTP" in bed.columns:
+                    bed = bed[~bed["DTP"]]
+                if "strata" not in bed.columns or cs.stratify_range is None:
+                    ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=next(markers))
 
+                else:
+                    x_val = []
+                    y_val = []
+                    for threshold in cs.stratify_range:
+                        # df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
+                        df = bed[bed["strata"] >= threshold]
+                        x_val.append(calc_score(df, x))
+                        y_val.append(calc_score(df, y))
+
+                    ax.scatter(x_val, y_val, alpha=0.6, marker=next(markers), s=20)
+                    ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
             else:
-                x_val = []
-                y_val = []
-                for threshold in cs.stratify_range:
-                    # df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
-                    df = bed[bed["strata"] >= threshold]
-                    x_val.append(calc_score(df, x))
-                    y_val.append(calc_score(df, y))
-
-                ax.scatter(x_val, y_val, alpha=0.6, marker=next(markers), s=20)
-                ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
+                next(markers)
 
         plt.xlabel(x)
         plt.ylabel(y)
