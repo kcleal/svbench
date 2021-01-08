@@ -85,6 +85,8 @@ def calc_score(table, v, ref=None):
         if ref is None:
             raise ValueError("ref data must be provided to calculate sensitivity")
         return table["TP"] / len(ref)
+    elif v == "Duplication":
+        return np.in1d(table["DTP"], True).sum() / np.in1d(table["TP"], True).sum()
     else:
         raise ValueError("Not implemented for table: {}".format(v))
 
@@ -107,9 +109,9 @@ def reference_calls_found(ref_data, query_data):
     return ref_data
 
 
-def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, refs=None, save_prefix=None,
+def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, show=True, refs=None, save_prefix=None,
          duplicate_tp=False):
-    choices = {'Total', 'TP', 'FP', 'FN', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
+    choices = {'Total', 'TP', 'FP', 'FN', 'Duplication', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
 
@@ -136,35 +138,49 @@ def plot(query_data, x="TP", y="Precision", xlim=None, ylim=None, show=True, ref
 
         ax.spines['right'].set_visible(False)
         ax.spines['top'].set_visible(False)
+        ax2 = None
+        if y2 is not None:
+            ax2 = ax.twinx()
         for cs in grp:
             if cs.breaks_df is not None:
+                marker = next(markers)
                 bed = cs.breaks_df[cs.breaks_df["quantified"]]
-                if not duplicate_tp and "DTP" in bed.columns:
-                    bed = bed[~bed["DTP"]]
+                # if not duplicate_tp and "DTP" in bed.columns:
+                #     bed = bed[~bed["DTP"]]
                 if "strata" not in bed.columns or cs.stratify_range is None:
-                    ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=next(markers))
-
+                    ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker)
+                    if ax2:
+                        ax.scatter(cs.scores[x], cs.scores[y])
                 else:
                     x_val = []
                     y_val = []
+                    y_val2 = []
                     for threshold in cs.stratify_range:
                         # df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
                         df = bed[bed["strata"] >= threshold]
                         x_val.append(calc_score(df, x))
                         y_val.append(calc_score(df, y))
+                        if ax2:
+                            y_val2.append(calc_score(df, y2))
 
-                    ax.scatter(x_val, y_val, alpha=0.6, marker=next(markers), s=20)
+                    ax.scatter(x_val, y_val, alpha=0.6, marker=marker, s=20)
                     ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
+
+                    if ax2:
+                        ax2.scatter(x_val, y_val2, alpha=0.6, marker=marker, s=20)
+                        ax2.plot(x_val, y_val2, label=cs.caller, alpha=0.6)
             else:
                 next(markers)
 
         plt.xlabel(x)
         plt.ylabel(y)
-        if xlim is not None:
-            plt.xlim(*xlim)
-        if ylim is not None:
-            plt.ylim(*ylim)
-        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        if ax2:
+            ax2.set_ylabel(y2)
+        # if xlim is not None:
+        #     plt.xlim(*xlim)
+        # if ylim is not None:
+        #     plt.ylim(*ylim)
+        plt.legend(loc='center left', bbox_to_anchor=(1.25, 0.5))
         plots[ref_name] = plt
         if save_prefix:
             plt.savefig(save_prefix + str(ref_name) + ".pdf")

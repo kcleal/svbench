@@ -1435,9 +1435,9 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     # # Link query calls to reference calls
     if dta is None:
         ts = [{"Total": None, "Ref": len(ref_bedpe), "DTP": None, "TP": None, "FP": None, "FN": None, "T >=": None,
-               "Precision": None, "Recall": None, "F1": None}]
+               "Precision": None, "Recall": None, "F1": None, "Duplication": None}]
         # return data
-        data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Precision",
+        data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                      "Recall", "F1"]]
         data.false_negative_indexes = ref_bedpe.index
         return
@@ -1625,6 +1625,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                  "FN": len(missing_ref_indexes),
                  "T >=": None
                  }
+            t["Duplication"] = t["DTP"] / len(good_idxs)
             sub_total = t["Total"] - t["DTP"]
             if sub_total > 0:
                 t.update({"Precision": round(float(t["TP"]) / sub_total, 4),  # Note DTP are not included
@@ -1650,6 +1651,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                      "FN": None,
                      "T >=": threshold
                      }
+                t["Duplication"] = t["DTP"] / len(good_idxs)
                 sub_total = t["Total"] - t["DTP"]
                 if sub_total > 0:
                     t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
@@ -1664,7 +1666,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                "Precision": None, "Recall": None, "F1": None}]
         data.false_negative_indexes = ref_bedpe.index
         # return data
-    data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Precision",
+    data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                  "Recall", "F1"]]
     if show_table:
 
