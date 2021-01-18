@@ -62,11 +62,23 @@ class Operate:
                 a = None
             else:
                 b = b[0]
-        if isinstance(a, str) and a.isnumeric():
-            a = float(a)
-        if isinstance(b, str) and b.isnumeric():
-            b = float(b)
-        return self.opps[o](a, b)
+        if isinstance(a, str):
+            # and a.isnumeric():
+            try:
+                a = float(a)
+            except ValueError:
+                pass
+        if isinstance(b, str): # and b.isnumeric():
+            try:
+                b = float(b)
+            except ValueError:
+                pass
+        try:
+            v = self.opps[o](a, b)
+        except TypeError:
+            print(f"Failed operation using op={o}, a={a} {type(a)}, b={b} {type(b)}", file=stderr)
+            quit()
+        return v
 
 
 class NSV:
@@ -173,15 +185,20 @@ def col_parser(r, col, key, first=True):
         else:
             ck = col
         if isinstance(ck, list):
-            if len(ck) == 1:  # Get first item of list or use None
-                return ck[0]
-            elif len(ck) > 1:
-                if first:
-                    ck = ck[0]
-                else:
-                    return ck
+            if len(ck) >= 1:  # Get first item of list or use None
+                v = ck[0]
+                try:
+                    v = float(v)
+                    return v
+                except ValueError:
+                    return v
+            # elif len(ck) > 1:
+            #     if first:
+            #         ck = ck[0]
             else:
-                ck = None
+                return ck
+            # else:
+            #     ck = None
     return ck
 
 
@@ -205,7 +222,6 @@ def check_passed(operations, r, keep):
 def get_strata(r, strat):
 
     cp = col_parser(r, strat.col, strat.key)
-
     if strat.add is not None:
         vals = [cp]
         current = strat.add
@@ -274,7 +290,10 @@ def parse_cols(r, item):
                 item.parsed_value = p
                 return f"{col}:{key}", item.parsed_value
         else:
-            item.parsed_value = r[col]
+            try:
+                item.parsed_value = r[col]
+            except TypeError:
+                item.parsed_value = r.__getattribute__(col)
             return col, item.parsed_value
 
 
@@ -321,31 +340,6 @@ def check_args(stratify, weight_field, keep, other_cols, size_range):
     if stratify is not None and (stratify.bins is None or not hasattr(stratify.bins, '__iter__')):
         raise ValueError(
             "Stratify must have an iterable for 'bins' argument e.g. Col('FORMAT', 'DV', bins=range(0, 60, 5))")
-
-
-def filter_by_size(df, size_range=(None, None), soft=True):
-    l_before = len(df)
-    if size_range[0] is not None or size_range[1] is not None:
-        min_size, max_size = size_range
-        drop = []
-        for idx, start, end, chrom1, chrom2 in zip(df.index, df["start"], df["end"], df["chrom"], df["chrom2"]):
-            if chrom1 == chrom2:
-                if "svlen" in df:
-                    s = df["svlen"].loc[idx]
-                else:
-                    s = abs(end - start)
-
-                if min_size is not None and s < min_size:
-                    drop.append(idx)
-                elif max_size is not None and s >= max_size:
-                    drop.append(idx)
-        print("Length before/after filter: {}, {}".format(l_before, l_before - len(drop)), file=stderr)
-        if not soft:
-            return df.drop(index=drop, inplace=False)
-        else:
-            df["size_filter_pass"] = [True if i not in drop else False for i in df.index]
-            return df
-    return df
 
 
 class CallSet:
@@ -440,7 +434,7 @@ class CallSet:
         if not isinstance(other, CallSet):
             raise ValueError("Calling add on {}, should be instance of CallSet".format(type(other)))
 
-        n = self.deepcopy()
+        n = self.copy()
 
         n.breaks_df["source"] = [n.caller] * len(n.breaks_df)
         other_df = other.breaks_df.copy(deep=True)
@@ -457,7 +451,7 @@ class CallSet:
             raise ValueError("Call add_intervals on both CallSet's before subtracting")
 
         matching_indexes = quantify(other, self, good_indexes_only=True)
-        n = self.deepcopy()
+        n = self.copy()
         n.breaks_df = n.breaks_df[~np.array(matching_indexes)]
         # n.breaks_df.reset_index(inplace=True)
         n.tree = None
@@ -476,7 +470,7 @@ class CallSet:
             raise ValueError("Call add_intervals on both CallSet's before subtracting")
 
         matching_indexes = quantify(other, self, good_indexes_only=True)
-        n = self.deepcopy()
+        n = self.copy()
         n.breaks_df = n.breaks_df[np.array(matching_indexes)]
         # n.breaks_df.reset_index(inplace=True)
         n.tree = None
@@ -579,7 +573,7 @@ class CallSet:
             print(f"Warning: unexpected arguments {list(new_args)}", file=stderr)
         return self
 
-    def deepcopy(self):
+    def copy(self):
         """Create a new deep-copy of this object
 
         :returns: CallSet instance
@@ -587,11 +581,23 @@ class CallSet:
         return copy.deepcopy(self)
 
     def new(self, **kwargs):
-        n = self.deepcopy()
+        n = self.copy()
         n.set_properties(kwargs)
         return n
 
-    def filter_by_size(self, min_size=None, max_size=None, inplace=False, soft=True):
+    def query(self, query_expression, inplace=True, engine="python"):
+        if not inplace:
+            cs = self.copy()
+        else:
+            cs = self
+        l_before = len(cs.breaks_df)
+        cs.breaks_df = cs.breaks_df.query(query_expression, engine=engine)
+        print("Filtered by expression, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
+                                                                                          l_before,
+                                                                                          len(cs.breaks_df)), file=stderr)
+        return cs
+
+    def filter_by_size(self, min_size=None, max_size=None, inplace=True, soft=False, keep_translocations=False):
         """Filter the loaded data defined in self.breaks_df by size (base-pairs).
 
         :param min_size: The minimum size threshold for the variant, size < min_size
@@ -600,13 +606,14 @@ class CallSet:
         :type max_size: int
         :param inplace: If set to True then filtering is performed inplace
         :type inplace: bool
+        :keep_translocations: False means translocations calls will be dropped
         :return: CallSet instance
         :rtype: svbench.CallSet
         """
         if inplace:
             cs = self
         else:
-            cs = self.deepcopy()
+            cs = self.copy()
         done = True
         if cs.min_size != min_size:
             cs.min_size = min_size
@@ -617,36 +624,77 @@ class CallSet:
         if done or (min_size is None and max_size is None):  # Nothing to be done
             return cs
 
+        if min_size is None:
+            min_s = -1
+        else:
+            min_s = min_size
+        if max_size is None:
+            max_s = 1e12
+        else:
+            max_s = max_size
+
         l_before = len(cs.breaks_df)
         df = cs.breaks_df
-        drop = []
-        for idx, start, end, chrom1, chrom2 in zip(df.index, df["start"], df["end"], df["chrom"], df["chrom2"]):
-            if chrom1 == chrom2:
-                if "svlen" in df:
-                    s = df["svlen"].loc[idx]
-                else:
-                    s = abs(end - start)
-                # s = abs(end - start)
-                if min_size is not None and s < min_size:
-                    drop.append(idx)
-                elif max_size is not None and s >= max_size:
-                    drop.append(idx)
-        print("Filtered by size, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
-                                                                                        l_before, l_before - len(drop)),
-              file=stderr)
-        if not soft:
-            df.drop(index=drop, inplace=True)
+
+        if keep_translocations:
+            size_filter = ((df["svlen"] >= min_s) & (df["svlen"] < max_s)) | (df["chrom1"] != df["chrom2"])
         else:
-            df["size_filter_pass"] = [True if i not in drop else False for i in df.index]
+            size_filter = (df["svlen"] >= min_s) & (df["svlen"] < max_s)
+
+        df["size_filter_pass"] = size_filter
+        if not soft:
+            df = df[size_filter]
+        print("Filtered by min_size={}, max_size={}, caller={}, dataset={} rows before {}, after {}".format(
+            min_size, max_size, self.caller, self.dataset,l_before, size_filter.sum()),
+              file=stderr)
+
+        cs.breaks_df = df
         return cs
+
+    def filter_by_svtype(self, svtype_set, inplace=True):
+        l_before = len(self.breaks_df)
+        bad_i = set([])
+        if isinstance(svtype_set, str):
+            svtype_set = set(tuple(svtype_set.split(",")))
+        for idx, svtype in zip(self.breaks_df.index, self.breaks_df.svtype):
+            if svtype not in svtype_set:
+                bad_i.add(idx)
+        print("Filtered by svtype, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
+                                                                                          l_before,
+                                                                                          l_before - len(bad_i)),
+              file=stderr)
+        if not inplace:
+            s = self.copy()
+            s.breaks_df = s.breaks_df.drop(bad_i)
+            return s
+        self.breaks_df = self.breaks_df.drop(bad_i)
+
+        return self
+
+    def filter_include_bed(self, include_bed_path):
+        l_before = len(self.breaks_df)
+        bad_i = set([])
+        if include_bed_path:
+            include_bed = CallSet().load_bed(path=include_bed_path, bedpe=False).add_intervals(interval_type="bed")
+            ol_tree = include_bed.tree
+            df = self.breaks_df
+            if df is not None and ol_tree is not None:
+                for index, chrom, start, chrom2, end in zip(df.index, df.chrom, df.start, df.chrom2, df.end):
+                    if ol_tree and chrom in ol_tree:
+                        if not any(ol_tree[chrom].ncls.find_overlap(start, start + 1)) or not any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
+                            bad_i.add(index)
+            self.breaks_df = self.breaks_df.drop(bad_i)
+
+        print("Filtered by include_bed, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
+                                                                                          l_before,
+                                                                                          l_before - len(bad_i)),
+              file=stderr)
+        return self
 
     def score_table(self):
         if self.scores is not None:
             print(f"Score table caller={self.caller} against dataset={self.dataset}", file=stderr)
-            try:
-                print(pd.DataFrame.from_records([self.scores], index=None).to_markdown(), file=stderr)
-            except:
-                print(pd.DataFrame.from_records([self.scores], index=None).to_string(), file=stderr)
+            print(pd.DataFrame.from_records([self.scores], index=None).to_string(), file=stderr)
 
     def set_strata(self, stratify_col, stratify_range):
 
@@ -655,70 +703,6 @@ class CallSet:
 
         self.breaks_df["strata"] = self.breaks_df[stratify_col]
         self.stratify_range = stratify_range
-        return self
-
-    def predict_proba(self, model=None, col_name="PROB", show_stats=True, density=False, bins=20, show_model=True,
-                      extra_cols=None):
-
-        if extra_cols is None:
-            extra_cols = self.extra_cols
-        if model is None:
-            model = self.model
-        if model is None:
-            raise ValueError("No model to use")
-        if show_model:
-            print("Model:", model, file=stderr)
-
-        # Sometimes NaN creep in or infinity
-        print("Using cols", extra_cols, file=stderr)
-        X = np.nan_to_num(self.breaks_df[extra_cols].astype(float))
-        y_predict = model.predict_proba(X)[:, 1]
-
-        if show_stats:
-            hist, bin_edges = np.histogram(y_predict, bins=bins, range=(0, 1), density=density)
-            print(
-                f"Distribution of probability values, caller={self.caller} dataset={self.dataset} (n={len(y_predict)})"
-                , file=stderr)
-
-            pp = pd.DataFrame.from_records([{round(j, 3): i for i, j in zip(hist, bin_edges)}]).set_index(
-                pd.Index(["Calls"]))
-            try:
-                print(pp.to_markdown(), file=stderr)
-            except:
-                print(pp.to_string(), file=stderr)
-
-        self.breaks_df[col_name] = y_predict
-        #
-        # for i in range(5):
-        #     print(self.breaks_df.iloc[i][["chrom", "start", "PROB"]], file=stderr)
-        return self
-
-    def predict(self, model=None, col_name="PROB", show_stats=True, density=False, bins=2, show_model=True):
-
-        if model is None:
-            model = self.model
-        if model is None:
-            raise ValueError("No model to use")
-        if show_model:
-            print("Model:", model, file=stderr)
-
-        # Sometimes NaN creep in or infinity
-        X = np.nan_to_num(self.breaks_df[self.extra_cols].astype(float))
-        y_predict = model.predict(X)
-
-        if show_stats:
-            hist, bin_edges = np.histogram(y_predict, bins=bins, range=(0, 1), density=density)
-            print(
-                f"Distribution of probability values, caller={self.caller} dataset={self.dataset} (n={len(y_predict)})"
-                , file=stderr)
-            pp = pd.DataFrame.from_records([{round(j, 3): i for i, j in zip(hist, bin_edges)}]).set_index(
-                pd.Index(["Calls"]))
-            try:
-                print(pp.to_markdown(), file=stderr)
-            except:
-                print(pp.to_string(), file=stderr)
-
-        self.breaks_df[col_name] = y_predict
         return self
 
     def load(self, path):
@@ -778,13 +762,20 @@ class CallSet:
         self.set_args(locals())  # Overwrite default params
 
         ol_tree = None
-        if include_bed:
+        if include_bed is not None:
             if isinstance(include_bed, CallSet):
                 assert include_bed.tree is not None
                 assert include_if in ("both", "single")
                 ol_tree = include_bed.tree
+            elif isinstance(include_bed, str):
+                v = CallSet(dataset=self.dataset)
+                # try:
+                include_bed = v.load_bed(path=include_bed, bedpe=False).add_intervals()
+                ol_tree = include_bed.tree
+                # except:
+                #     raise ValueError("Failed to load include_bed")
             else:
-                raise ValueError("include_bed must be of type svbench.CallSet")
+                raise ValueError("include_bed must be of type svbench.CallSet or PATH")
 
         # Load instance parameters, these may have been set previously
         # style = self.style
@@ -862,7 +853,7 @@ class CallSet:
                     continue
 
             try:
-                svtype = r.INFO["SVTYPE"]
+                svtype = r.INFO["SVTYPE"] if not isinstance(r.INFO["SVTYPE"], list) else r.INFO["SVTYPE"][0]
             except KeyError:
                 continue
 
@@ -894,25 +885,31 @@ class CallSet:
                     chrom2 = r.INFO["CHR2"]
                     if chrom2[0] != "c":
                         chrom2 = "chr" + chrom2
-                try:
+
+                done = False
+                if "END" in r.INFO:
                     end = r.INFO["END"]
                     if isinstance(end, list):
                         end = end[0]
                     end = int(end)
-                except IndexError:
-                    raise IOError
-                except KeyError:
-                    # Try and infer
-                    done = False
-                    if svtype == "DEL" and "SVLEN" in r.INFO:
-                        svlen = r.INFO["SVLEN"]
-                        if isinstance(svlen, list):
-                            svlen = svlen[0]
-                        end = start + svlen
+                    done = True
+                elif svtype == "DEL" and "SVLEN" in r.INFO:
+                    svlen = r.INFO["SVLEN"]
+                    if isinstance(svlen, list):
+                        svlen = svlen[0]
+                    end = start + svlen
+                    done = True
+                else:  # Try and use ALT / REF lengths
+                    if r.INFO["SVTYPE"] == "DEL":
+                        svlen = len(r.REF) if r.ALT is not isinstance(r.REF, list) else r.REF[0]
+                        done = True
+                    elif r.INFO["SVTYPE"] == "INS":
+                        svlen = len(r.ALT) if r.ALT is not isinstance(r.ALT, list) else r.ALT[0]
                         done = True
 
-                    if not done:
-                        raise ValueError("Could not parse SV END", r, r.INFO)
+                if not done:
+                    print("Warning: could not parse record", r, file=stderr)
+                    continue
 
             if no_translocations and chrom != chrom2:
                 continue
@@ -934,7 +931,12 @@ class CallSet:
                     svlen = r.INFO["SVLEN"]
                     if isinstance(svlen, list):
                         svlen = svlen[0]
-                    svlen = abs(svlen)
+
+                    if svlen is None:
+                        svlen = None
+                    else:
+                        svlen = abs(svlen)
+
                 else:
                     svlen = abs(end - start)
                     if svlen < 2 and "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
@@ -969,7 +971,7 @@ class CallSet:
                 unique_ids.add(r_id)
 
             d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype,
-                 "size_filter_pass": size_filter, "svlen": abs(svlen)}
+                 "size_filter_pass": size_filter, "svlen": abs(svlen) if svlen else svlen}
 
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
@@ -1417,8 +1419,8 @@ def best_index(out_edges, key="q"):
 
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
-             good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=False,
-             pct_size=0.25):
+             good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True,
+             pct_size=0.05, ignore_svtype=True):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1481,14 +1483,12 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"],
                                                                ref_row["chrom2"], ref_row["end"])
 
-            # if start == 57861455:
-            #     print(chrom, ref_chrom, chrom2, ref_chrom2, svtype)
             # Make sure chromosomes match
             if chrom != ref_chrom or chrom2 != ref_chrom2:
                 continue
 
-            # if ref_row["svtype"] != svtype:
-            #     continue
+            if not ignore_svtype and ref_row["svtype"] != svtype:
+                continue
 
             if svtype != "INS":  # and abs(ref_end - ref_start) > 50:
 
@@ -1511,8 +1511,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                         pct = min(ref_size, query_size) / max(ref_size, query_size)
                         if pct < pct_size:
                             continue
-                    # if start == 57861455:
-                    #     print("here", reciprocal_overlap, force_intersection, ol)
 
                     if reciprocal_overlap != 0:
                         if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
@@ -1618,12 +1616,12 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         if threshold is None:
 
             t = {"Total": len(dta),
-                 "Ref": n_in_ref, #len(ref_bedpe),
+                 "Ref": n_in_ref,
                  "DTP": len(duplicate_idxs),
                  "TP": len(good_idxs),
                  "FP": len(index) - len(good_idxs) - len(duplicate_idxs),
                  "FN": len(missing_ref_indexes),
-                 "T >=": None
+                 "T >=": n_in_ref - len(good_idxs)
                  }
             t["Duplication"] = t["DTP"] / len(good_idxs)
             sub_total = t["Total"] - t["DTP"]
@@ -1644,13 +1642,13 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             df = dta[dta["strata"] >= threshold]
             if len(df) > 0:
                 t = {"Total": len(df),
-                     "Ref": n_in_ref, # len(ref_bedpe),
+                     "Ref": n_in_ref,
                      "DTP": np.sum(np.in1d(df["DTP"], True)),
                      "TP": np.sum(np.in1d(df["TP"], True)),
                      "FP": np.sum(np.in1d(df["FP"], True)),
-                     "FN": None,
-                     "T >=": threshold
+                     "T >=": threshold,
                      }
+                t["FN"] = n_in_ref - t["TP"]
                 t["Duplication"] = t["DTP"] / len(good_idxs)
                 sub_total = t["Total"] - t["DTP"]
                 if sub_total > 0:
@@ -1663,39 +1661,43 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     if len(ts) == 0:
         print("Warning: precision/recall could not be determined", file=stderr)
         ts = [{"Total": None, "Ref": len(ref_bedpe), "DTP": None, "TP": None, "FP": None, "FN": None, "T >=": None,
-               "Precision": None, "Recall": None, "F1": None}]
+               "Duplication": None, "Precision": None, "Recall": None, "F1": None}]
         data.false_negative_indexes = ref_bedpe.index
-        # return data
+
     data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                  "Recall", "F1"]]
     if show_table:
 
-        dat = data.breaks_df[~data.breaks_df["DTP"]]
+        print("Scores:", file=stderr)
+        print(data.scores.to_string(), file=stderr)
+        dat = data.breaks_df
+        if allow_duplicate_tp:
+            dat = dat[~dat["DTP"]]
         if "ref_size" not in dat.columns:
             print("No TP calls found", file=stderr)
         else:
-            s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
-            try:
-                print(data.scores.to_markdown(), file=stderr)
-            except:
-                print(data.scores.to_string(), file=stderr)
 
+            s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
             size_brackets = []
             for idx in range(len(s_ranges) - 1):
                 size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
 
             if "svlen" in dat and "svlen" in ref_bedpe:
+
                 size_brackets.append("All ranges")
                 s = np.append(s, [s.sum()])
                 s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
                 s2 = np.append(s2, [s2.sum()])
                 sens = s / s2
+
                 s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
                 s_fp = np.append(s_fp, [s_fp.sum()])
                 prec = s / (s + s_fp)
                 f1 = 2 * ((prec * sens) / (prec + sens))
+
                 df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
                 data.size_scores = df_sizes
+
                 print("Scores over side ranges:", file=stderr)
                 print(df_sizes.to_string(), file=stderr)
 

@@ -11,8 +11,8 @@ import numpy as np
 __all__ = ["score", "reference_calls_found", "plot", ]
 
 
-def score(ref_data, query_data, rescore=True, force_intersection=True, reciprocal_overlap=0., stratify=False, n_jobs=1,
-          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=False, pct_size=0.25):
+def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False, n_jobs=1,
+          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0.2):
 
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}
@@ -40,7 +40,7 @@ def score(ref_data, query_data, rescore=True, force_intersection=True, reciproca
 
         jobs = []
         for query in vals:
-
+            print(f"Scoring dataset={query.dataset} caller={query.caller}", file=stderr)
             if query.dataset not in targets:
                 raise ValueError("Reference data not found for ", query.dataset)
 
@@ -86,7 +86,10 @@ def calc_score(table, v, ref=None):
             raise ValueError("ref data must be provided to calculate sensitivity")
         return table["TP"] / len(ref)
     elif v == "Duplication":
-        return np.in1d(table["DTP"], True).sum() / np.in1d(table["TP"], True).sum()
+        sdtp = np.in1d(table["TP"], True).sum()
+        if sdtp > 0:
+            return np.in1d(table["DTP"], True).sum() / np.in1d(table["TP"], True).sum()
+        return 0
     else:
         raise ValueError("Not implemented for table: {}".format(v))
 
@@ -109,7 +112,7 @@ def reference_calls_found(ref_data, query_data):
     return ref_data
 
 
-def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, show=True, refs=None, save_prefix=None,
+def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim=None, show=True, refs=None, save_name=None,
          duplicate_tp=False):
     choices = {'Total', 'TP', 'FP', 'FN', 'Duplication', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
@@ -163,27 +166,32 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, show=
                         if ax2:
                             y_val2.append(calc_score(df, y2))
 
-                    ax.scatter(x_val, y_val, alpha=0.6, marker=marker, s=20)
-                    ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
+                    # ax.scatter(x_val, y_val, alpha=0.6, marker=marker, s=20)
+                    # ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
+                    ax.plot(x_val, y_val, label=cs.caller, marker=marker, markersize=4, alpha=0.6)
 
                     if ax2:
-                        ax2.scatter(x_val, y_val2, alpha=0.6, marker=marker, s=20)
-                        ax2.plot(x_val, y_val2, label=cs.caller, alpha=0.6)
+                        # ax2.scatter(x_val, y_val2, alpha=0.6, marker=marker, s=20)
+                        ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=4, alpha=0.6)
             else:
                 next(markers)
 
-        plt.xlabel(x)
-        plt.ylabel(y)
+        ax.set_xlabel(x)
+        ax.set_ylabel(y)
         if ax2:
             ax2.set_ylabel(y2)
-        # if xlim is not None:
-        #     plt.xlim(*xlim)
+        if xlim is not None:
+            plt.xlim(*xlim)
+        if ylim is not None:
+            ax.set_ylim(*ylim)
+        if y2lim is not None:
+            ax2.set_ylim(*y2lim)
         # if ylim is not None:
         #     plt.ylim(*ylim)
         plt.legend(loc='center left', bbox_to_anchor=(1.25, 0.5))
         plots[ref_name] = plt
-        if save_prefix:
-            plt.savefig(save_prefix + str(ref_name) + ".pdf")
+        if save_name:
+            plt.savefig(save_name)
     if show:
         plt.show()
     return plots
