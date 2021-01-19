@@ -71,7 +71,7 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
         raise ValueError("query_data argument must be of type CallSet, list or dict")
 
 
-def calc_score(table, v, ref=None):
+def calc_score(table, v, ref=None, keep_duplicates=False):
     # Assume pandas DataFrame
     if len(table) == 0:
         return None
@@ -80,7 +80,7 @@ def calc_score(table, v, ref=None):
     elif v in ("TP", "FP", "DTP"):
         return np.in1d(table[v], True).sum()
     elif v == "Precision":
-        return np.in1d(table["TP"], True).sum() / float(len(table))
+        return np.in1d(table["TP"], True).sum() / float(len(table) - 0 if not keep_duplicates else np.in1d(table["DTP"], True).sum())
     elif v == "Sensitivity":
         if ref is None:
             raise ValueError("ref data must be provided to calculate sensitivity")
@@ -113,7 +113,7 @@ def reference_calls_found(ref_data, query_data):
 
 
 def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim=None, show=True, refs=None, save_name=None,
-         duplicate_tp=False):
+         alpha=0.6, markersize=3, keep_duplicates=False):
     choices = {'Total', 'TP', 'FP', 'FN', 'Duplication', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
@@ -146,6 +146,8 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
             ax2 = ax.twinx()
         for cs in grp:
             if cs.breaks_df is not None:
+                # if not keep_duplicates:
+                #     cs.breaks_df = cs.breaks_df[~cs.breaks_df["DTP"]]
                 marker = next(markers)
                 bed = cs.breaks_df[cs.breaks_df["quantified"]]
                 # if not duplicate_tp and "DTP" in bed.columns:
@@ -161,18 +163,18 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
                     for threshold in cs.stratify_range:
                         # df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
                         df = bed[bed["strata"] >= threshold]
-                        x_val.append(calc_score(df, x))
-                        y_val.append(calc_score(df, y))
+                        x_val.append(calc_score(df, x, keep_duplicates))
+                        y_val.append(calc_score(df, y, keep_duplicates))
                         if ax2:
                             y_val2.append(calc_score(df, y2))
 
                     # ax.scatter(x_val, y_val, alpha=0.6, marker=marker, s=20)
                     # ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
-                    ax.plot(x_val, y_val, label=cs.caller, marker=marker, markersize=4, alpha=0.6)
+                    ax.plot(x_val, y_val, label=cs.caller, marker=marker, markersize=markersize, alpha=alpha)
 
                     if ax2:
                         # ax2.scatter(x_val, y_val2, alpha=0.6, marker=marker, s=20)
-                        ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=4, alpha=0.6)
+                        ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=markersize, alpha=alpha)
             else:
                 next(markers)
 
