@@ -1420,7 +1420,7 @@ def best_index(out_edges, key="q"):
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
              good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True,
-             pct_size=0.05, ignore_svtype=True):
+             pct_size=0.05, ignore_svtype=True, min_ref_size=20, max_ref_size=None):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1437,7 +1437,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     # # Link query calls to reference calls
     if dta is None:
         ts = [{"Total": None, "Ref": len(ref_bedpe), "DTP": None, "TP": None, "FP": None, "FN": None, "T >=": None,
-               "Precision": None, "Recall": None, "F1": None, "Duplication": None}]
+               "Precision": None, "Recall": None, "F1": None, "Duplication": None, "quantified": None, "strata": None}]
         # return data
         data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                      "Recall", "F1"]]
@@ -1572,9 +1572,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         duplicate_idxs = {k: v for k, v in duplicate_idxs.items() if k not in good_idxs}
     else:
         duplicate_idxs = {}
-    # size_f = data.breaks_df["size_filter_pass"]
-    # data.breaks_df["TP"] = [i in good_idxs and size_f.loc[i] for i in index]
-    # data.breaks_df["DTP"] = [i in duplicate_idxs and size_f.loc[i] for i in index]
 
     df = data.breaks_df
     df["TP"] = [i in good_idxs for i in index]
@@ -1594,26 +1591,46 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                                       (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
                                       for i in index]
 
-    if "size_filter_pass" not in ref_bedpe or "size_filter_pass" not in df:
-        df["quantified"] = [True] * len(df)
-        n_in_ref = len(ref_bedpe)
-    else:
+    if min_ref_size is not None or max_ref_size is not None:
+        if min_ref_size is None:
+            min_ref_size = 0
+        if max_ref_size is None:
+            max_ref_size = 1e9
 
-        ref_size_passed_idxs = set(ref_bedpe[ref_bedpe["size_filter_pass"]].index)
-        df["quantified"] = df["ref_index"].isin(ref_size_passed_idxs) | df["size_filter_pass"]
-        n_in_ref = ref_bedpe["size_filter_pass"].sum()
+        quant = []
+        for tp, rs, l in zip(df["TP"], df["ref_size"], df["svlen"]):
+            q = False
+            if rs == rs and rs is not None and min_ref_size <= rs < max_ref_size:
+                q = True
+            elif not tp and min_ref_size <= l < max_ref_size:
+                q = True
+            quant.append(q)
+        df["quantified"] = quant
+    else:
+        df["quantified"] = [True] * len(df)
+
+    n_in_ref = len(ref_bedpe)
+    # if "size_filter_pass" not in ref_bedpe or "size_filter_pass" not in df:
+    #     df["quantified"] = [True] * len(df)
+    #     n_in_ref = len(ref_bedpe)
+    # else:
+    #     ref_size_passed_idxs = set(ref_bedpe[ref_bedpe["size_filter_pass"]].index)
+    #     df["quantified"] = df["ref_index"].isin(ref_size_passed_idxs) | df["size_filter_pass"]
+    #     n_in_ref = ref_bedpe["size_filter_pass"].sum()
 
     if stratify and data.stratify_range is not None:
         rng = data.stratify_range
     else:
         rng = [None]
 
+    data.breaks_df = df
     dta = df[df["quantified"]]
+
     ts = []
 
     for threshold in rng:
 
-        if threshold is None:
+        if threshold is None or len(dta) == 0:
 
             t = {"Total": len(dta),
                  "Ref": n_in_ref,
@@ -1623,8 +1640,14 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                  "FN": len(missing_ref_indexes),
                  "T >=": n_in_ref - len(good_idxs)
                  }
-            t["Duplication"] = t["DTP"] / len(good_idxs)
-            sub_total = t["Total"] - t["DTP"]
+            if len(good_idxs) > 0:
+                t["Duplication"] = t["DTP"] / len(good_idxs)
+            else:
+                t["Duplication"] = 0
+            if allow_duplicate_tp:
+                sub_total = t["Total"] - t["DTP"]
+            else:
+                sub_total = t["Total"]
             if sub_total > 0:
                 t.update({"Precision": round(float(t["TP"]) / sub_total, 4),  # Note DTP are not included
                           "Sensitivity": round(float(t["TP"]) / t["Ref"], 4),
@@ -1638,7 +1661,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             ts.append(t)
 
         else:
-
             df = dta[dta["strata"] >= threshold]
             if len(df) > 0:
                 t = {"Total": len(df),
@@ -1649,8 +1671,15 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                      "T >=": threshold,
                      }
                 t["FN"] = n_in_ref - t["TP"]
-                t["Duplication"] = t["DTP"] / len(good_idxs)
-                sub_total = t["Total"] - t["DTP"]
+
+                if len(good_idxs) > 0:
+                    t["Duplication"] = t["DTP"] / len(good_idxs)
+                else:
+                    t["Duplication"] = 0
+                if allow_duplicate_tp:
+                    sub_total = t["Total"] - t["DTP"]
+                else:
+                    sub_total = t["Total"]
                 if sub_total > 0:
                     t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
                               "Recall": round(float(t["TP"]) / t["Ref"], 4)})
@@ -1661,7 +1690,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     if len(ts) == 0:
         print("Warning: precision/recall could not be determined", file=stderr)
         ts = [{"Total": None, "Ref": len(ref_bedpe), "DTP": None, "TP": None, "FP": None, "FN": None, "T >=": None,
-               "Duplication": None, "Precision": None, "Recall": None, "F1": None}]
+               "Duplication": None, "Precision": None, "Recall": None, "F1": None, "strata": None}]
         data.false_negative_indexes = ref_bedpe.index
 
     data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
@@ -1669,37 +1698,41 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     if show_table:
 
         print("Scores:", file=stderr)
-        print(data.scores.to_string(), file=stderr)
-        dat = data.breaks_df
-        if allow_duplicate_tp:
-            dat = dat[~dat["DTP"]]
-        if "ref_size" not in dat.columns:
-            print("No TP calls found", file=stderr)
+        if len(data.breaks_df) == 0:
+            print("None", file=stderr)
         else:
+            print(data.scores.to_string(), file=stderr)
+            dat = data.breaks_df
+            if allow_duplicate_tp:
+                dat = dat[~dat["DTP"]]
+            dat = dat[dat["quantified"]]
+            if "ref_size" not in dat.columns:
+                print("No TP calls found", file=stderr)
+            else:
 
-            s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
-            size_brackets = []
-            for idx in range(len(s_ranges) - 1):
-                size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
+                s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
+                size_brackets = []
+                for idx in range(len(s_ranges) - 1):
+                    size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
 
-            if "svlen" in dat and "svlen" in ref_bedpe:
+                if "svlen" in dat and "svlen" in ref_bedpe:
 
-                size_brackets.append("All ranges")
-                s = np.append(s, [s.sum()])
-                s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
-                s2 = np.append(s2, [s2.sum()])
-                sens = s / s2
+                    size_brackets.append("All ranges")
+                    s = np.append(s, [s.sum()])
+                    s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
+                    s2 = np.append(s2, [s2.sum()])
+                    sens = s / s2
 
-                s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
-                s_fp = np.append(s_fp, [s_fp.sum()])
-                prec = s / (s + s_fp)
-                f1 = 2 * ((prec * sens) / (prec + sens))
+                    s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
+                    s_fp = np.append(s_fp, [s_fp.sum()])
+                    prec = s / (s + s_fp)
+                    f1 = 2 * ((prec * sens) / (prec + sens))
 
-                df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
-                data.size_scores = df_sizes
+                    df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
+                    data.size_scores = df_sizes
 
-                print("Scores over side ranges:", file=stderr)
-                print(df_sizes.to_string(), file=stderr)
+                    print("Scores over side ranges:", file=stderr)
+                    print(df_sizes.to_string(), file=stderr)
 
     data.false_negative_indexes = missing_ref_indexes
 

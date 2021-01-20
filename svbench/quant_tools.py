@@ -12,7 +12,8 @@ __all__ = ["score", "reference_calls_found", "plot", ]
 
 
 def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False, n_jobs=1,
-          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0.2):
+          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0.2, min_ref_size=20,
+          max_ref_size=None):
 
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}
@@ -27,7 +28,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
         query = query_data
         print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
         query = quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
-                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size)
+                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
+                         min_ref_size=min_ref_size, max_ref_size=max_ref_size)
         print("-" * 45, file=stderr)
         return query
 
@@ -53,7 +55,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
             if n_jobs == 1:
                 print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
                 quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
-                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size)
+                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
+                         min_ref_size=min_ref_size, max_ref_size=max_ref_size)
                 print("-"*45, file=stderr)
 
             else:
@@ -80,7 +83,11 @@ def calc_score(table, v, ref=None, keep_duplicates=False):
     elif v in ("TP", "FP", "DTP"):
         return np.in1d(table[v], True).sum()
     elif v == "Precision":
-        return np.in1d(table["TP"], True).sum() / float(len(table) - 0 if not keep_duplicates else np.in1d(table["DTP"], True).sum())
+        if not keep_duplicates:
+            t = table[~table["DTP"]]
+        else:
+            t = table
+        return np.in1d(t["TP"], True).sum() / float(len(t))
     elif v == "Sensitivity":
         if ref is None:
             raise ValueError("ref data must be provided to calculate sensitivity")
