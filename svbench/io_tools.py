@@ -1695,6 +1695,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                  "Recall", "F1"]]
+
     if show_table:
 
         print("Scores:", file=stderr)
@@ -1702,6 +1703,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             print("None", file=stderr)
         else:
             print(data.scores.to_string(), file=stderr)
+
             dat = data.breaks_df
             if allow_duplicate_tp:
                 dat = dat[~dat["DTP"]]

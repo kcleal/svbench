@@ -7,6 +7,8 @@ from joblib import Parallel, delayed
 from svbench.io_tools import CallSet, quantify
 from sys import stderr
 import numpy as np
+from matplotlib.pyplot import cm
+
 
 __all__ = ["score", "reference_calls_found", "plot", ]
 
@@ -120,7 +122,7 @@ def reference_calls_found(ref_data, query_data):
 
 
 def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim=None, show=True, refs=None, save_name=None,
-         alpha=0.6, markersize=3, keep_duplicates=False):
+         alpha=0.6, markersize=3, keep_duplicates=False, colors_iter=None):
     choices = {'Total', 'TP', 'FP', 'FN', 'Duplication', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
@@ -132,6 +134,11 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
         raise ValueError("quant_tools.score function must be called prior to plotting")
 
     markers = itertools.cycle(['o', '>', '<', '+', 'D', 's', 11, 10, '*', 'X', 3, '_'])
+
+    if colors_iter is None:
+        colors = cm.rainbow(np.linspace(0, 1, len(query_data)))
+
+    colors = iter(colors_iter)
 
     plots = {}
     for ref_name, grp in itertools.groupby(sorted(query_data, key=lambda qq: qq.dataset), key=lambda q: q.dataset):
@@ -156,11 +163,12 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
                 # if not keep_duplicates:
                 #     cs.breaks_df = cs.breaks_df[~cs.breaks_df["DTP"]]
                 marker = next(markers)
+                clr = next(colors)
                 bed = cs.breaks_df[cs.breaks_df["quantified"]]
                 # if not duplicate_tp and "DTP" in bed.columns:
                 #     bed = bed[~bed["DTP"]]
                 if "strata" not in bed.columns or cs.stratify_range is None:
-                    ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker)
+                    ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker, color=clr)
                     if ax2:
                         ax.scatter(cs.scores[x], cs.scores[y])
                 else:
@@ -177,11 +185,11 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
 
                     # ax.scatter(x_val, y_val, alpha=0.6, marker=marker, s=20)
                     # ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
-                    ax.plot(x_val, y_val, label=cs.caller, marker=marker, markersize=markersize, alpha=alpha)
+                    ax.plot(x_val, y_val, label=cs.caller, marker=marker, markersize=markersize, alpha=alpha, color=clr)
 
                     if ax2:
                         # ax2.scatter(x_val, y_val2, alpha=0.6, marker=marker, s=20)
-                        ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=markersize, alpha=alpha)
+                        ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=markersize, alpha=alpha, color=clr)
             else:
                 next(markers)
 
