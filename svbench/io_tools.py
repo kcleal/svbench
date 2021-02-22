@@ -458,7 +458,7 @@ class CallSet:
         return n
 
     def __len__(self):
-        return len(self.breaks_df)
+        return len(self.breaks_df) if self.breaks_df is not None else 0
 
     def intersection(self, other):
         return self.__iand__(other)

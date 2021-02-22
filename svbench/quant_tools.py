@@ -122,7 +122,7 @@ def reference_calls_found(ref_data, query_data):
 
 
 def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim=None, show=True, refs=None, save_name=None,
-         alpha=0.6, markersize=3, keep_duplicates=False, colors_iter=None):
+         alpha=0.6, markersize=3, keep_duplicates=False, colors_iter=None, stratify=True):
     choices = {'Total', 'TP', 'FP', 'FN', 'Duplication', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
@@ -136,9 +136,9 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
     markers = itertools.cycle(['o', '>', '<', '+', 'D', 's', 11, 10, '*', 'X', 3, '_'])
 
     if colors_iter is None:
-        colors = cm.rainbow(np.linspace(0, 1, len(query_data)))
-
-    colors = iter(colors_iter)
+        colors = iter(cm.Dark2(np.linspace(0, 1, len(query_data))))
+    else:
+        colors = iter(colors_iter)
 
     plots = {}
     for ref_name, grp in itertools.groupby(sorted(query_data, key=lambda qq: qq.dataset), key=lambda q: q.dataset):
@@ -160,17 +160,17 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
             ax2 = ax.twinx()
         for cs in grp:
             if cs.breaks_df is not None:
-                # if not keep_duplicates:
-                #     cs.breaks_df = cs.breaks_df[~cs.breaks_df["DTP"]]
+
                 marker = next(markers)
                 clr = next(colors)
                 bed = cs.breaks_df[cs.breaks_df["quantified"]]
-                # if not duplicate_tp and "DTP" in bed.columns:
-                #     bed = bed[~bed["DTP"]]
-                if "strata" not in bed.columns or cs.stratify_range is None:
-                    ax.scatter(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker, color=clr)
+
+                if "strata" not in bed.columns or cs.stratify_range is None or not stratify:
+                    ax.plot(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker, markerfacecolor=clr, alpha=alpha,
+                            markeredgecolor=clr, color="none")
                     if ax2:
-                        ax.scatter(cs.scores[x], cs.scores[y])
+                        ax2.plot(cs.scores[x], cs.scores[y2], marker=marker, markerfacecolor='none', alpha=alpha,
+                                 label=cs.caller, markeredgecolor=clr, color="none")
                 else:
                     x_val = []
                     y_val = []
@@ -192,6 +192,7 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
                         ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=markersize, alpha=alpha, color=clr)
             else:
                 next(markers)
+                next(colors)
 
         ax.set_xlabel(x)
         ax.set_ylabel(y)
