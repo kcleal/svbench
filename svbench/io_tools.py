@@ -1513,7 +1513,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                             continue
 
                     if reciprocal_overlap != 0:
-                        if (ol / query_size < reciprocal_overlap) or (ol / ref_size < reciprocal_overlap):
+                        if (ol / query_size < reciprocal_overlap) and (ol / ref_size < reciprocal_overlap):
                             continue
 
                     if force_intersection and ol == 0:
