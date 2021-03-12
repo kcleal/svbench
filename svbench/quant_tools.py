@@ -163,7 +163,7 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
 
                 marker = next(markers)
                 clr = next(colors)
-                bed = cs.breaks_df[cs.breaks_df["quantified"]]
+                bed = cs.breaks_df #[cs.breaks_df["quantified"]]
 
                 if "strata" not in bed.columns or cs.stratify_range is None or not stratify:
                     ax.plot(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker, markerfacecolor=clr, alpha=alpha,

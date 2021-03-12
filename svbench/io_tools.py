@@ -1562,7 +1562,8 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                 quit()
         continue
 
-    index = data.breaks_df.index  # Use the original IDs?
+    df = data.breaks_df
+    index = df.index  # Use the original IDs?
 
     if good_indexes_only:
         return [i in good_idxs for i in index]
@@ -1573,7 +1574,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     else:
         duplicate_idxs = {}
 
-    df = data.breaks_df
     df["TP"] = [i in good_idxs for i in index]
     df["DTP"] = [i in duplicate_idxs for i in index]
 
@@ -1591,24 +1591,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                                       (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
                                       for i in index]
 
-    if min_ref_size is not None or max_ref_size is not None:
-        if min_ref_size is None:
-            min_ref_size = 0
-        if max_ref_size is None:
-            max_ref_size = 1e9
-
-        quant = []
-        for tp, rs, l in zip(df["TP"], df["ref_size"], df["svlen"]):
-            q = False
-            if rs == rs and rs is not None and min_ref_size <= rs < max_ref_size:
-                q = True
-            elif not tp and min_ref_size <= l < max_ref_size:
-                q = True
-            quant.append(q)
-        df["quantified"] = quant
-    else:
-        df["quantified"] = [True] * len(df)
-
     n_in_ref = len(ref_bedpe)
     # if "size_filter_pass" not in ref_bedpe or "size_filter_pass" not in df:
     #     df["quantified"] = [True] * len(df)
@@ -1618,13 +1600,32 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     #     df["quantified"] = df["ref_index"].isin(ref_size_passed_idxs) | df["size_filter_pass"]
     #     n_in_ref = ref_bedpe["size_filter_pass"].sum()
 
+    # if min_ref_size is not None or max_ref_size is not None:
+    #     if min_ref_size is None:
+    #         min_ref_size = 0
+    #     if max_ref_size is None:
+    #         max_ref_size = 1e9
+    #     quant = []
+    #     for tp, rs, l, ii in zip(df["TP"], df["ref_size"], df["svlen"], df.index):
+    #         q = False
+    #         if rs == rs and rs is not None and min_ref_size <= rs < max_ref_size:
+    #             q = True
+    #         elif not tp and min_ref_size <= l < max_ref_size:
+    #             q = True
+    #         quant.append(q)
+    #
+    #     df["quantified"] = quant
+    # else:
+    #     df["quantified"] = [True] * len(df)
+
     if stratify and data.stratify_range is not None:
         rng = data.stratify_range
     else:
         rng = [None]
 
     data.breaks_df = df
-    dta = df[df["quantified"]]
+    dta = df
+    # dta = df[df["quantified"]]
 
     ts = []
 
@@ -1634,14 +1635,14 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
             t = {"Total": len(dta),
                  "Ref": n_in_ref,
-                 "DTP": len(duplicate_idxs),
-                 "TP": len(good_idxs),
-                 "FP": len(index) - len(good_idxs) - len(duplicate_idxs),
+                 "DTP": np.sum(np.in1d(dta["DTP"], True)),
+                 "TP": np.sum(np.in1d(dta["TP"], True)),
+                 "FP": np.sum(np.in1d(dta["FP"], True)),
                  "FN": len(missing_ref_indexes),
-                 "T >=": n_in_ref - len(good_idxs)
+                 "T >=": None
                  }
             if len(good_idxs) > 0:
-                t["Duplication"] = t["DTP"] / len(good_idxs)
+                t["Duplication"] = t["DTP"] / t["TP"]  #len(good_idxs)
             else:
                 t["Duplication"] = 0
             if allow_duplicate_tp:
@@ -1658,6 +1659,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     t["F1"] = None
             else:
                 t.update({"F1": None, "Precision": None, "Recall": None})
+
             ts.append(t)
 
         else:
@@ -1707,7 +1709,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             dat = data.breaks_df
             if allow_duplicate_tp:
                 dat = dat[~dat["DTP"]]
-            dat = dat[dat["quantified"]]
+            # dat = dat[dat["quantified"]]
             if "ref_size" not in dat.columns:
                 print("No TP calls found", file=stderr)
             else:
