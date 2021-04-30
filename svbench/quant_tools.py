@@ -10,7 +10,7 @@ import numpy as np
 from matplotlib.pyplot import cm
 
 
-__all__ = ["score", "reference_calls_found", "plot", ]
+__all__ = ["score", "reference_calls_found", "plot"]
 
 
 def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False, n_jobs=1,

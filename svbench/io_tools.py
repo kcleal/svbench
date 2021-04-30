@@ -671,25 +671,29 @@ class CallSet:
 
         return self
 
-    def filter_include_bed(self, include_bed_path):
-        l_before = len(self.breaks_df)
+    def filter_include_bed(self, include_bed_path, inplace=False):
+        if not inplace:
+            v = self.copy()
+        else:
+            v = self
+        l_before = len(v.breaks_df)
         bad_i = set([])
         if include_bed_path:
             include_bed = CallSet().load_bed(path=include_bed_path, bedpe=False).add_intervals(interval_type="bed")
             ol_tree = include_bed.tree
-            df = self.breaks_df
+            df = v.breaks_df
             if df is not None and ol_tree is not None:
                 for index, chrom, start, chrom2, end in zip(df.index, df.chrom, df.start, df.chrom2, df.end):
                     if ol_tree and chrom in ol_tree:
                         if not any(ol_tree[chrom].ncls.find_overlap(start, start + 1)) or not any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
                             bad_i.add(index)
-            self.breaks_df = self.breaks_df.drop(bad_i)
+            v.breaks_df = v.breaks_df.drop(bad_i)
 
-        print("Filtered by include_bed, caller={}, dataset={} rows before {}, after {}".format(self.caller, self.dataset,
+        print("Filtered by include_bed, caller={}, dataset={} rows before {}, after {}".format(v.caller, v.dataset,
                                                                                           l_before,
                                                                                           l_before - len(bad_i)),
               file=stderr)
-        return self
+        return v
 
     def score_table(self):
         if self.scores is not None:
@@ -725,6 +729,18 @@ class CallSet:
         else:
             raise ValueError("Unknown file kind {}".format(self.kind))
 
+    def parse_str_cols(self, cols):
+        if type(cols) == list and all(type(i) == str for i in cols):
+            c = []
+            for k in cols:
+                if ":" in k:
+                    c.append(Col(*k.split(":")))
+                else:
+                    c.append(Col(k))
+            return c
+        else:
+            return cols
+
     def load_vcf(self, path, weight_field=None,
                  no_translocations=True, allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
                  min_size=None, max_size=None, soft_size_filter=False,
@@ -756,6 +772,8 @@ class CallSet:
 
         self.path = path
         self.kind = "vcf"
+
+        other_cols = self.parse_str_cols(other_cols)
 
         check_args(stratify, weight_field, keep, other_cols, (min_size, max_size))
 
@@ -823,6 +841,7 @@ class CallSet:
             for k in reader.formats.keys():
                 l.append(Col("FORMAT", k))
             other_cols = l
+
 
         vcf_index = 0
         not_in_include = 0
@@ -1739,5 +1758,3 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     print(df_sizes.to_string(), file=stderr)
 
     data.false_negative_indexes = missing_ref_indexes
-
-    return data
