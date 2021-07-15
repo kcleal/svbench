@@ -400,6 +400,8 @@ class CallSet:
         self.temp = None
         self.include_bed = None
         self.include_if = "both"
+        self.load_genotype = True
+        self.gt_scores = None
 
         # Track defaults for persistence
         self.default_params = {k: v for k, v in self.__dict__.items() if k in {"bedpe",
@@ -744,7 +746,7 @@ class CallSet:
     def load_vcf(self, path, weight_field=None,
                  no_translocations=True, allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
                  min_size=None, max_size=None, soft_size_filter=False,
-                 other_cols=None, include_bed=None, include_if="both"):
+                 other_cols=None, include_bed=None, include_if="both", load_genotype=True):
         """Load variants from the vcf file path.
 
         :param path: The path to the vcf input file
@@ -842,7 +844,7 @@ class CallSet:
                 l.append(Col("FORMAT", k))
             other_cols = l
 
-
+        #
         vcf_index = 0
         not_in_include = 0
         while True:
@@ -1001,6 +1003,11 @@ class CallSet:
                     new_cols = list(parsed.keys())
                 d.update(parsed)
 
+            if load_genotype:
+                samps = r.__getattribute__("samples")
+                if len(samps) > 1:
+                    raise ValueError("Cannot parse genotype for multi-sample vcf")
+                d["GT"] = str(samps[0]["GT"])
             res.append(d)
 
         if len(res) == 0:
@@ -1021,6 +1028,8 @@ class CallSet:
 
         # Order df
         base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id", "size_filter_pass", "svlen"]
+        if load_genotype:
+            base_cols.append("GT")
         df = df[[i for i in base_cols if i in df.columns] + new_cols]
 
         self.breaks_df = df
@@ -1644,7 +1653,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     data.breaks_df = df
     dta = df
-    # dta = df[df["quantified"]]
 
     ts = []
 
@@ -1758,3 +1766,35 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     print(df_sizes.to_string(), file=stderr)
 
     data.false_negative_indexes = missing_ref_indexes
+
+    if 'GT' in ref_data.breaks_df and 'GT' in data.breaks_df:
+        ref_gts = ref_data.breaks_df['GT']
+        gt_correct = []
+        actual_gt = []
+        for i, q_gt in zip(data.breaks_df.ref_index, data.breaks_df.GT):
+            if i == i:
+                r_gt = ref_gts.loc[int(i)]
+                if q_gt == r_gt:
+                    gt_correct.append(True)
+                else:
+                    gt_correct.append(False)
+                actual_gt.append(r_gt)
+            else:
+                gt_correct.append(False)
+                actual_gt.append("0/0")
+        data.breaks_df["ref_GT"] = actual_gt
+        tp, fp = gt_correct.count(True), gt_correct.count(False)
+        if tp + fp == 0:
+            print("Genotype true-positives and false-positives == 0", file=stderr)
+
+        else:
+            t = {"gt_precision": 0 if tp + fp == 0 else tp / (tp + fp),
+                 "gt_recall": 0 if len(missing_ref_indexes) == 0 and tp == 0 else tp / (tp + len(missing_ref_indexes))}
+
+            t["gt_f1"] = round(2 * ((t["gt_precision"] * t["gt_recall"]) / (t["gt_precision"] + t["gt_recall"] + 1e-6)), 4)
+            t.update({k: v for k, v in Counter(data.breaks_df.GT).items() if v == v})
+            data.gt_scores = t
+
+            if show_table:
+                print("GT scores:", file=stderr)
+                print(t, file=stderr)
