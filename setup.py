@@ -9,7 +9,8 @@ setup(
             'pandas',
             'networkx>=2.4',
             'ncls',
-            'pyvcf'
+            'pyvcf',
+            'matplotlib'
         ],
     packages=find_packages(where="."),
     include_package_data=True,

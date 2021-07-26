@@ -1699,6 +1699,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     data.scores = pd.DataFrame.from_records(ts)[["Caller", "T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                  "Recall", "F1"]]
+    data.false_negative_indexes = missing_ref_indexes
 
     if show_table:
 
@@ -1734,16 +1735,21 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         prec = s / (s + s_fp)
         f1 = 2 * ((prec * sens) / (prec + sens))
 
+        # Duplicated are currently filtered before this step
+        # s_dtp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["DTP"]) if i == i and j], ref_size_bins)
+        # s_dtp = np.append(s_dtp, [s_dtp.sum()])
+
+        s_fn, _ = np.histogram([ref_data.breaks_df["svlen"].loc[i] for i in missing_ref_indexes], ref_size_bins)
+        s_fn = np.append(s_fn, [s_fn.sum()])
+
         df_sizes = pd.DataFrame({"Caller": [data.caller] * len(size_brackets),
-                                 "Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec,
+                                 "Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "FN": s_fn, "Precision": prec,
                                  "Recall": sens, "F1": f1})
         data.size_scores = df_sizes
 
         if show_table:
             print("Scores over size ranges:", file=stderr)
             print(df_sizes.to_string(), file=stderr)
-
-    data.false_negative_indexes = missing_ref_indexes
 
     if 'GT' in ref_data.breaks_df and 'GT' in data.breaks_df:
         ref_gts = ref_data.breaks_df['GT']
