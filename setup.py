@@ -2,14 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name="svbench",
-    version='0.5.0',
+    version='0.5.1',
     python_requires='>=3.7',
     install_requires=[
             'numpy',
             'pandas',
             'networkx>=2.4',
             'ncls',
-            'joblib'
+            'pyvcf'
         ],
     packages=find_packages(where="."),
     include_package_data=True,

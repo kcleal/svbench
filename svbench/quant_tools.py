@@ -1,8 +1,6 @@
 
-
 import matplotlib.pyplot as plt
 import itertools
-import numpy as np
 from joblib import Parallel, delayed
 from svbench.io_tools import CallSet, quantify
 from sys import stderr
@@ -13,8 +11,8 @@ from matplotlib.pyplot import cm
 __all__ = ["score", "reference_calls_found", "plot"]
 
 
-def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False, n_jobs=1,
-          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0.2, min_ref_size=20,
+def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False,
+          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0.1, min_ref_size=20,
           max_ref_size=None, ignore_svtype=True):
 
     if isinstance(ref_data, CallSet):
@@ -29,11 +27,10 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
     if isinstance(query_data, CallSet):
         query = query_data
         print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
-        query = quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
-                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
-                         min_ref_size=min_ref_size, max_ref_size=max_ref_size, ignore_svtype=ignore_svtype)
+        quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
+                 ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
+                 min_ref_size=min_ref_size, max_ref_size=max_ref_size, ignore_svtype=ignore_svtype)
         print("-" * 45, file=stderr)
-        return query
 
     elif isinstance(query_data, list) or isinstance(query_data, dict):
 
@@ -42,7 +39,6 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
         else:
             vals = query_data.values()
 
-        jobs = []
         for query in vals:
             print(f"Scoring dataset={query.dataset} caller={query.caller}", file=stderr)
             if query.dataset not in targets:
@@ -50,27 +46,12 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
 
             if not rescore:
                 continue
-            if query.scores is not None:
-                # Todo Dont need to use interval tree, just use labelled df
-                pass
 
-            if n_jobs == 1:
-                print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
-                quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
-                         ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
-                         min_ref_size=min_ref_size, max_ref_size=max_ref_size)
-                print("-"*45, file=stderr)
-
-            else:
-                jobs.append((targets[query.dataset], query, force_intersection, reciprocal_overlap, False, stratify))
-
-        if jobs:
-            vals = Parallel(n_jobs=n_jobs)(delayed(quantify)(*args) for args in jobs)
-
-        if isinstance(query_data, list):
-            return vals
-        else:
-            return {k: v for k, v in zip(query_data.keys(), vals)}
+            print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
+            quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
+                     ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
+                     min_ref_size=min_ref_size, max_ref_size=max_ref_size)
+            print("-"*45, file=stderr)
 
     else:
         raise ValueError("query_data argument must be of type CallSet, list or dict")
@@ -163,7 +144,7 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
 
                 marker = next(markers)
                 clr = next(colors)
-                bed = cs.breaks_df #[cs.breaks_df["quantified"]]
+                bed = cs.breaks_df
 
                 if "strata" not in bed.columns or cs.stratify_range is None or not stratify:
                     ax.plot(cs.scores[x], cs.scores[y], label=cs.caller, marker=marker, markerfacecolor=clr, alpha=alpha,
@@ -176,19 +157,15 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
                     y_val = []
                     y_val2 = []
                     for threshold in cs.stratify_range:
-                        # df = bed[(bed["strata"] >= threshold) & (~bed["DTP"])]
                         df = bed[bed["strata"] >= threshold]
                         x_val.append(calc_score(df, x, keep_duplicates))
                         y_val.append(calc_score(df, y, keep_duplicates))
                         if ax2:
                             y_val2.append(calc_score(df, y2))
 
-                    # ax.scatter(x_val, y_val, alpha=0.6, marker=marker, s=20)
-                    # ax.plot(x_val, y_val, label=cs.caller, alpha=0.6)
                     ax.plot(x_val, y_val, label=cs.caller, marker=marker, markersize=markersize, alpha=alpha, color=clr)
 
                     if ax2:
-                        # ax2.scatter(x_val, y_val2, alpha=0.6, marker=marker, s=20)
                         ax2.plot(x_val, y_val2, linestyle='dashed', label=cs.caller, marker=marker, markersize=markersize, alpha=alpha, color=clr)
             else:
                 next(markers)
@@ -204,8 +181,7 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
             ax.set_ylim(*ylim)
         if y2lim is not None:
             ax2.set_ylim(*y2lim)
-        # if ylim is not None:
-        #     plt.ylim(*ylim)
+
         plt.legend(loc='center left', bbox_to_anchor=(1.25, 0.5))
         plots[ref_name] = plt
         if save_name:

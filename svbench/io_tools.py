@@ -346,13 +346,13 @@ class CallSet:
     """
     This class holds instructions for parsing an input file containing variants. Supported formats include
     'vcf', 'bed', 'bedpe', 'csv'.
-    Raw data may optionally be saved within the object, along with a model-object for classifying input data.
+    Raw data may optionally be saved within the object.
 
     :param dataset: A name for the input dataset (optional)
     :type dataset: str
     :param caller: The name of the variant caller used (optional)
     :type caller: str
-    :param kwargs: Allows CallSet attributes can be set during initialization - if any kwargs are not found in the \
+    :param kwargs: Allows CallSet attributes to be set during initialization - if any kwargs are not found in the \
     self.default_params.keys() list, then the key: value pair is added to the self.required dictionary. The purpose of \
     this feature is to allow the setting of required arguments, which can be useful when creating new class instances.
     :returns: CallSet instance
@@ -405,8 +405,6 @@ class CallSet:
 
         # Track defaults for persistence
         self.default_params = {k: v for k, v in self.__dict__.items() if k in {"bedpe",
-                                                                               # "style",
-                                                                               # "add_weight",
                                                                                "weight_field",
                                                                                "no_translocations",
                                                                                "allowed_svtypes",
@@ -424,8 +422,7 @@ class CallSet:
                                                                                "drop_first_row",
                                                                                "svtype_field"}}
 
-        self.meta_data = {"scikit-learn": pkg_resources.get_distribution("scikit-learn").version,
-                          "svbench": pkg_resources.get_distribution("svbench").version,
+        self.meta_data = {"svbench": pkg_resources.get_distribution("svbench").version,
                           "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
         # Update any provided kwargs
@@ -455,7 +452,6 @@ class CallSet:
         matching_indexes = quantify(other, self, good_indexes_only=True)
         n = self.copy()
         n.breaks_df = n.breaks_df[~np.array(matching_indexes)]
-        # n.breaks_df.reset_index(inplace=True)
         n.tree = None
         return n
 
@@ -474,7 +470,6 @@ class CallSet:
         matching_indexes = quantify(other, self, good_indexes_only=True)
         n = self.copy()
         n.breaks_df = n.breaks_df[np.array(matching_indexes)]
-        # n.breaks_df.reset_index(inplace=True)
         n.tree = None
         return n
 
@@ -587,7 +582,7 @@ class CallSet:
         n.set_properties(kwargs)
         return n
 
-    def query(self, query_expression, inplace=True, engine="python"):
+    def query(self, query_expression, inplace=False, engine="python"):
         if not inplace:
             cs = self.copy()
         else:
@@ -599,7 +594,7 @@ class CallSet:
                                                                                           len(cs.breaks_df)), file=stderr)
         return cs
 
-    def filter_by_size(self, min_size=None, max_size=None, inplace=True, soft=False, keep_translocations=False):
+    def filter_by_size(self, min_size=None, max_size=None, inplace=False, soft=False, keep_translocations=False):
         """Filter the loaded data defined in self.breaks_df by size (base-pairs).
 
         :param min_size: The minimum size threshold for the variant, size < min_size
@@ -653,7 +648,7 @@ class CallSet:
         cs.breaks_df = df
         return cs
 
-    def filter_by_svtype(self, svtype_set, inplace=True):
+    def filter_by_svtype(self, svtype_set, inplace=False):
         l_before = len(self.breaks_df)
         bad_i = set([])
         if isinstance(svtype_set, str):
@@ -789,16 +784,12 @@ class CallSet:
                 ol_tree = include_bed.tree
             elif isinstance(include_bed, str):
                 v = CallSet(dataset=self.dataset)
-                # try:
                 include_bed = v.load_bed(path=include_bed, bedpe=False).add_intervals()
                 ol_tree = include_bed.tree
-                # except:
-                #     raise ValueError("Failed to load include_bed")
             else:
                 raise ValueError("include_bed must be of type svbench.CallSet or PATH")
 
         # Load instance parameters, these may have been set previously
-        # style = self.style
         add_weight = self.weight_field is not None
         weight_field = self.weight_field
         no_translocations = self.no_translocations
@@ -1100,7 +1091,6 @@ class CallSet:
                  other_cols=None, drop_first_row=False,
                  add_chr_prefix=True):
 
-        # self.path = path
         self.kind = "csv"
 
         check_args(stratify, weight_field, keep, other_cols, (min_size, max_size))
@@ -1338,15 +1328,15 @@ class CallSet:
 
                     position += 1
 
-    def save_as(self, path, new_col=None, add_to=None, format=None):
+    def save_as(self, path, new_col=None, add_to=None, format_t=None):
         if new_col is None and self.new_col is not None:
             new_col = self.new_col
         if add_to is None and self.add_to is not None:
             add_to = self.add_to
 
-        if format is None and self.kind == "vcf":
+        if format_t is None and self.kind == "vcf":
             self.write_to_vcf(path, new_col, add_to)
-        elif format is None and self.kind == "csv":
+        elif format_t is None and self.kind == "csv":
             raise ValueError("Not implemented currently")
 
         else:
@@ -1356,8 +1346,8 @@ class CallSet:
     def _sort_func(x):
         return x[0], x[1]
 
-    def save_intervals(self, path, format="bed"):
-        if format not in {"bed", "bedpe"}:
+    def save_intervals(self, path, format_t="bed"):
+        if format_t not in {"bed", "bedpe"}:
             raise ValueError("format must be bed or bedpe")
         if self.breaks_df is None:
             raise ValueError("breaks_df object has not been constructed")
@@ -1369,12 +1359,12 @@ class CallSet:
 
             v = []
             for idx, r in self.breaks_df.iterrows():
-                if format == "bed":
+                if format_t == "bed":
 
                     v.append((r['chrom'], r['start'] - slop, r['start'] + slop, idx, r["id"]))
                     v.append((r['chrom2'], r['end'] - slop, r['end'] + slop, idx, r["id"]))
 
-                elif format == "bedpe":
+                elif format_t == "bedpe":
                     v.append((r['chrom'], r['start'] - slop, r['start'] + slop, r["chrom2"], r["end"] - slop,
                               r["end"] + slop, idx,  r["id"]))
 
@@ -1518,34 +1508,42 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             if not ignore_svtype and ref_row["svtype"] != svtype:
                 continue
 
-            if svtype != "INS":  # and abs(ref_end - ref_start) > 50:
+            # if svtype != "INS":
 
-                # If intra-chromosomal, check reciprocal overlap
-                if chrom == chrom2:
+            # If intra-chromosomal, check reciprocal overlap
+            if chrom == chrom2:
 
-                    if "svlen" in dta:
-                        query_size = dta["svlen"].loc[query_idx] + 1e-6
-                    else:
-                        query_size = end - start + 1e-6
+                if "svlen" in ref_row:
+                    ref_size = ref_row["svlen"] + 1e-6
+                else:
+                    ref_size = ref_end - ref_start + 1e-3
 
-                    if "svlen" in ref_row:
-                        ref_size = ref_row["svlen"] + 1e-6
-                    else:
-                        ref_size = ref_end - ref_start + 1e-3
-
-                    ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
-
-                    if pct_size:
-                        pct = min(ref_size, query_size) / max(ref_size, query_size)
-                        if pct < pct_size:
-                            continue
-
-                    if reciprocal_overlap != 0:
-                        if (ol / query_size < reciprocal_overlap) and (ol / ref_size < reciprocal_overlap):
-                            continue
-
-                    if force_intersection and ol == 0:
+                if min_ref_size is not None:
+                    if ref_size < min_ref_size:
                         continue
+
+                if max_ref_size is not None:
+                    if ref_size >= max_ref_size:
+                        continue
+
+                if "svlen" in dta:
+                    query_size = dta["svlen"].loc[query_idx] + 1e-6
+                else:
+                    query_size = end - start + 1e-6
+
+                ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
+
+                if pct_size > 0:
+                    pct = min(ref_size, query_size) / max(ref_size, query_size)
+                    if pct < pct_size:
+                        continue
+
+                if reciprocal_overlap > 0:
+                    if (ol / query_size < reciprocal_overlap) and (ol / ref_size < reciprocal_overlap):
+                        continue
+
+                if force_intersection and ol == 0:
+                    continue
 
             dis = abs(ref_start - start) + abs(ref_end - end)
             if dis < min_d:
@@ -1620,31 +1618,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                                       for i in index]
 
     n_in_ref = len(ref_bedpe)
-    # if "size_filter_pass" not in ref_bedpe or "size_filter_pass" not in df:
-    #     df["quantified"] = [True] * len(df)
-    #     n_in_ref = len(ref_bedpe)
-    # else:
-    #     ref_size_passed_idxs = set(ref_bedpe[ref_bedpe["size_filter_pass"]].index)
-    #     df["quantified"] = df["ref_index"].isin(ref_size_passed_idxs) | df["size_filter_pass"]
-    #     n_in_ref = ref_bedpe["size_filter_pass"].sum()
-
-    # if min_ref_size is not None or max_ref_size is not None:
-    #     if min_ref_size is None:
-    #         min_ref_size = 0
-    #     if max_ref_size is None:
-    #         max_ref_size = 1e9
-    #     quant = []
-    #     for tp, rs, l, ii in zip(df["TP"], df["ref_size"], df["svlen"], df.index):
-    #         q = False
-    #         if rs == rs and rs is not None and min_ref_size <= rs < max_ref_size:
-    #             q = True
-    #         elif not tp and min_ref_size <= l < max_ref_size:
-    #             q = True
-    #         quant.append(q)
-    #
-    #     df["quantified"] = quant
-    # else:
-    #     df["quantified"] = [True] * len(df)
 
     if stratify and data.stratify_range is not None:
         rng = data.stratify_range
@@ -1666,10 +1639,11 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                  "TP": np.sum(np.in1d(dta["TP"], True)),
                  "FP": np.sum(np.in1d(dta["FP"], True)),
                  "FN": len(missing_ref_indexes),
-                 "T >=": None
+                 "T >=": None,
+                 "Caller": data.caller,
                  }
             if len(good_idxs) > 0:
-                t["Duplication"] = t["DTP"] / t["TP"]  #len(good_idxs)
+                t["Duplication"] = t["DTP"] / t["TP"]
             else:
                 t["Duplication"] = 0
             if allow_duplicate_tp:
@@ -1698,6 +1672,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                      "TP": np.sum(np.in1d(df["TP"], True)),
                      "FP": np.sum(np.in1d(df["FP"], True)),
                      "T >=": threshold,
+                     "Caller": data.caller,
                      }
                 t["FN"] = n_in_ref - t["TP"]
 
@@ -1722,7 +1697,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                "Duplication": None, "Precision": None, "Recall": None, "F1": None, "strata": None}]
         data.false_negative_indexes = ref_bedpe.index
 
-    data.scores = pd.DataFrame.from_records(ts)[["T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
+    data.scores = pd.DataFrame.from_records(ts)[["Caller", "T >=", "Ref", "Total", "TP", "FP", "DTP", "FN", "Duplication", "Precision",
                                                  "Recall", "F1"]]
 
     if show_table:
@@ -1733,37 +1708,40 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         else:
             print(data.scores.to_string(), file=stderr)
 
-            dat = data.breaks_df
-            if allow_duplicate_tp:
-                dat = dat[~dat["DTP"]]
-            # dat = dat[dat["quantified"]]
-            if "ref_size" not in dat.columns:
-                print("No TP calls found", file=stderr)
-            else:
+    dat = data.breaks_df
+    if allow_duplicate_tp:
+        dat = dat[~dat["DTP"]]
+    # dat = dat[dat["quantified"]]
+    if "ref_size" not in dat.columns:
+        print("No TP calls found", file=stderr)
+    elif "svlen" not in ref_bedpe:
+        print("SV length missing from ref CallSet", file=stderr)
+    else:
 
-                s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
-                size_brackets = []
-                for idx in range(len(s_ranges) - 1):
-                    size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
+        s, s_ranges = np.histogram([i for i, j in zip(dat["ref_size"], dat["TP"]) if i == i and j], ref_size_bins)
+        size_brackets = []
+        for idx in range(len(s_ranges) - 1):
+            size_brackets.append("[{}, {})".format(s_ranges[idx], s_ranges[idx + 1]))
 
-                if "svlen" in dat and "svlen" in ref_bedpe:
+        size_brackets.append("All ranges")
+        s = np.append(s, [s.sum()])
+        s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
+        s2 = np.append(s2, [s2.sum()])
+        sens = s / s2
 
-                    size_brackets.append("All ranges")
-                    s = np.append(s, [s.sum()])
-                    s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
-                    s2 = np.append(s2, [s2.sum()])
-                    sens = s / s2
+        s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
+        s_fp = np.append(s_fp, [s_fp.sum()])
+        prec = s / (s + s_fp)
+        f1 = 2 * ((prec * sens) / (prec + sens))
 
-                    s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
-                    s_fp = np.append(s_fp, [s_fp.sum()])
-                    prec = s / (s + s_fp)
-                    f1 = 2 * ((prec * sens) / (prec + sens))
+        df_sizes = pd.DataFrame({"Caller": [data.caller] * len(size_brackets),
+                                 "Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec,
+                                 "Recall": sens, "F1": f1})
+        data.size_scores = df_sizes
 
-                    df_sizes = pd.DataFrame({"Ref size ranges": size_brackets, "TP": s, "FP": s_fp, "Precision": prec, "Recall": sens, "F1": f1})
-                    data.size_scores = df_sizes
-
-                    print("Scores over side ranges:", file=stderr)
-                    print(df_sizes.to_string(), file=stderr)
+        if show_table:
+            print("Scores over size ranges:", file=stderr)
+            print(df_sizes.to_string(), file=stderr)
 
     data.false_negative_indexes = missing_ref_indexes
 
@@ -1788,13 +1766,14 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             print("Genotype true-positives and false-positives == 0", file=stderr)
 
         else:
-            t = {"gt_precision": 0 if tp + fp == 0 else tp / (tp + fp),
-                 "gt_recall": 0 if len(missing_ref_indexes) == 0 and tp == 0 else tp / (tp + len(missing_ref_indexes))}
+            t = {"Caller": data.caller, "GT_precision": 0 if tp + fp == 0 else tp / (tp + fp),
+                 "GT_recall": 0 if len(missing_ref_indexes) == 0 and tp == 0 else tp / (tp + len(missing_ref_indexes))}
 
-            t["gt_f1"] = round(2 * ((t["gt_precision"] * t["gt_recall"]) / (t["gt_precision"] + t["gt_recall"] + 1e-6)), 4)
+            t["GT_f1"] = round(2 * ((t["GT_precision"] * t["GT_recall"]) / (t["GT_precision"] + t["GT_recall"] + 1e-6)), 4)
             t.update({k: v for k, v in Counter(data.breaks_df.GT).items() if v == v})
-            data.gt_scores = t
+
+            data.gt_scores = pd.DataFrame({k: [v] for k, v in t.items()})
 
             if show_table:
                 print("GT scores:", file=stderr)
-                print(t, file=stderr)
+                print(data.gt_scores, file=stderr)
