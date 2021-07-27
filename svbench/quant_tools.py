@@ -1,7 +1,6 @@
 
 import matplotlib.pyplot as plt
 import itertools
-from joblib import Parallel, delayed
 from svbench.io_tools import CallSet, quantify
 from sys import stderr
 import numpy as np
@@ -18,6 +17,9 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}
     elif isinstance(ref_data, list):
+        datasets = [v.dataset for v in ref_data]
+        if len(datasets) != len(set(datasets)):
+            raise ValueError("More than one reference 'dataset' with the same name found")
         targets = {v.dataset: v for v in ref_data}
     elif isinstance(ref_data, dict):
         targets = ref_data

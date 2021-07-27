@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="svbench",
-    version='0.5.1',
+    version='0.5.2',
     python_requires='>=3.7',
     install_requires=[
             'numpy',
