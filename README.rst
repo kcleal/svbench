@@ -9,9 +9,11 @@ Installation
 ------------
 Install using::
 
-    $ python setup.py install
-    # Or
-    $ pip install -r requirements.txt; pip install .
+    pip install svbench
+
+Or::
+
+    pip install -r requirements.txt; pip install .
 
 Requires Python>=3.6, packages needed are listed in requirements.txt.
 
