@@ -864,10 +864,22 @@ class CallSet:
                     not_in_include += 1
                     continue
 
-            try:
+            if "SVTYPE" in r.INFO:
                 svtype = r.INFO["SVTYPE"] if not isinstance(r.INFO["SVTYPE"], list) else r.INFO["SVTYPE"][0]
-            except KeyError:
-                continue
+            else:
+                if isinstance(r.REF, list):
+                    lr = len(r.REF[0])
+                else:
+                    lr = len(r.REF)
+                if isinstance(r.ALT, list):
+                    la = len(r.ALT[0])
+                else:
+                    la = len(r.ALT)
+                if lr > 1 or la > 1:
+                    if lr > la:
+                        r.INFO["SVTYPE"] = "DEL"
+                    else:
+                        r.INFO["SVTYPE"] = "INS"
 
             try:
                 if allowed_svtypes is not None and svtype not in allowed_svtypes:
@@ -912,15 +924,18 @@ class CallSet:
                     end = start + svlen
                     done = True
                 else:  # Try and use ALT / REF lengths
-                    if r.INFO["SVTYPE"] == "DEL":
+
+                    if r.INFO["SVTYPE"] == "DEL" or (isinstance(r.INFO["SVTYPE"], list) and r.INFO["SVTYPE"][0] == "DEL"):
                         svlen = len(r.REF) if r.ALT is not isinstance(r.REF, list) else r.REF[0]
+                        end = r.POS + svlen
                         done = True
-                    elif r.INFO["SVTYPE"] == "INS":
+                    elif r.INFO["SVTYPE"] == "INS" or (isinstance(r.INFO["SVTYPE"], list) and r.INFO["SVTYPE"][0] == "INS"):
                         svlen = len(r.ALT) if r.ALT is not isinstance(r.ALT, list) else r.ALT[0]
+                        end = r.POS + svlen
                         done = True
 
                 if not done:
-                    print("Warning: could not parse record", r, file=stderr)
+                    print("Warning: could not parse record", r, r.INFO, file=stderr)
                     continue
 
             if no_translocations and chrom != chrom2:
@@ -1021,6 +1036,7 @@ class CallSet:
         base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id", "size_filter_pass", "svlen"]
         if load_genotype:
             base_cols.append("GT")
+            df["GT"] = df["GT"].str.replace("|", "/")
         df = df[[i for i in base_cols if i in df.columns] + new_cols]
 
         self.breaks_df = df
