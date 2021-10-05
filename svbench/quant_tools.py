@@ -11,7 +11,7 @@ __all__ = ["score", "reference_calls_found", "plot"]
 
 
 def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False,
-          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0.1, min_ref_size=20,
+          ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0., min_ref_size=0,
           max_ref_size=None, ignore_svtype=True):
 
     if isinstance(ref_data, CallSet):

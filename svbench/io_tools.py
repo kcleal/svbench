@@ -844,6 +844,8 @@ class CallSet:
                 vcf_index += 1
             except StopIteration:
                 break
+            except IndexError:
+                raise IndexError("last record was", str(r))
 
             ol_start = False
             ol_end = False
@@ -897,8 +899,14 @@ class CallSet:
             if svtype == "BND":
                 if "_2" in r.ID:  # Skip second part of BND record
                     continue
-                chrom2 = r.ALT[0].chr
-                end = r.ALT[0].pos
+                if r.ALT[0] is None:
+                    continue
+                try:
+                    chrom2 = r.ALT[0].chr
+                    end = r.ALT[0].pos
+                except AttributeError:
+                    print("Error parsing", r, file=stderr)
+                    continue
                 if end is None:
                     end = start + 1
                 else:
@@ -998,7 +1006,7 @@ class CallSet:
                 unique_ids.add(r_id)
 
             d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype,
-                 "size_filter_pass": size_filter, "svlen": abs(svlen) if svlen else svlen}
+                 "size_filter_pass": size_filter, "svlen": abs(svlen) if svlen else svlen, "filter": r.FILTER}
 
             if stratify is not None:
                 d["strata"] = get_strata(r, stratify)
@@ -1033,7 +1041,7 @@ class CallSet:
                         df[ec] = v.norm(df[ec], self.kwargs)
 
         # Order df
-        base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id", "size_filter_pass", "svlen"]
+        base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id", "size_filter_pass", "svlen", "filter"]
         if load_genotype:
             base_cols.append("GT")
             df["GT"] = df["GT"].str.replace("|", "/")
@@ -1523,8 +1531,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
             if not ignore_svtype and ref_row["svtype"] != svtype:
                 continue
-
-            # if svtype != "INS":
 
             # If intra-chromosomal, check reciprocal overlap
             if chrom == chrom2:
