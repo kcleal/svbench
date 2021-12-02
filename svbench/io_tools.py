@@ -857,6 +857,9 @@ class CallSet:
             if allowed_chroms is not None and chrom not in allowed_chroms:
                 continue
 
+            if "#" in chrom:
+                continue
+
             start = int(r.POS)
 
             if ol_tree and chrom in ol_tree:
@@ -925,7 +928,7 @@ class CallSet:
                         end = end[0]
                     end = int(end)
                     done = True
-                elif svtype == "DEL" and "SVLEN" in r.INFO:
+                elif svtype in ("DEL", "DUP", "INV") and "SVLEN" in r.INFO:
                     svlen = r.INFO["SVLEN"]
                     if isinstance(svlen, list):
                         svlen = svlen[0]
@@ -1021,7 +1024,19 @@ class CallSet:
                 samps = r.__getattribute__("samples")
                 if len(samps) > 1:
                     raise ValueError("Cannot parse genotype for multi-sample vcf")
-                d["GT"] = str(samps[0]["GT"])
+                done = False
+                try:
+                    d["GT"] = str(samps[0]["GT"])
+                except IndexError:
+                    pass
+
+                if not done:
+                    try:
+                        d["GT"] = r.INFO["GT"]
+                    except KeyError:
+                        pass
+                    d["GT"] = "NA"
+
             res.append(d)
 
         if len(res) == 0:
@@ -1462,7 +1477,7 @@ def best_index(out_edges, key="q"):
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
              good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True,
-             pct_size=0.05, ignore_svtype=True, min_ref_size=20, max_ref_size=None):
+             pct_size=0.05, ignore_svtype=True, min_ref_size=20, max_ref_size=None, dups_and_ins_equivalent=False):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1494,7 +1509,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         chrom, start, chrom2, end = sv_key(chrom, start, chrom2, end)
 
         ol_start = intersecter(tree, chrom, start, start + 1)
-
         if not ol_start:
             continue
 
@@ -1530,7 +1544,10 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                 continue
 
             if not ignore_svtype and ref_row["svtype"] != svtype:
-                continue
+                if dups_and_ins_equivalent and svtype in ("DUP", "INS") and ref_row["svtype"] in ("DUP", "INS"):
+                    pass
+                else:
+                    continue
 
             # If intra-chromosomal, check reciprocal overlap
             if chrom == chrom2:
@@ -1778,7 +1795,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         gt_correct = []
         actual_gt = []
         for i, q_gt in zip(data.breaks_df.ref_index, data.breaks_df.GT):
-            if i == i:
+            if i == i and i is not None:
                 r_gt = ref_gts.loc[int(i)]
                 if q_gt == r_gt:
                     gt_correct.append(True)

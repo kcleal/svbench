@@ -12,7 +12,7 @@ __all__ = ["score", "reference_calls_found", "plot"]
 
 def score(ref_data, query_data, rescore=True, force_intersection=False, reciprocal_overlap=0., stratify=False,
           ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True, pct_size=0., min_ref_size=0,
-          max_ref_size=None, ignore_svtype=True):
+          max_ref_size=None, ignore_svtype=True, dups_and_ins_equivalent=False):
 
     if isinstance(ref_data, CallSet):
         targets = {ref_data.dataset: ref_data}
@@ -31,7 +31,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
         print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
         quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
                  ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
-                 min_ref_size=min_ref_size, max_ref_size=max_ref_size, ignore_svtype=ignore_svtype)
+                 min_ref_size=min_ref_size, max_ref_size=max_ref_size, ignore_svtype=ignore_svtype,
+                 dups_and_ins_equivalent=dups_and_ins_equivalent)
         print("-" * 45, file=stderr)
 
     elif isinstance(query_data, list) or isinstance(query_data, dict):
@@ -52,7 +53,8 @@ def score(ref_data, query_data, rescore=True, force_intersection=False, reciproc
             print(f"Score table caller={query.caller} against dataset={query.dataset}", file=stderr)
             quantify(targets[query.dataset], query, force_intersection, reciprocal_overlap, stratify=stratify,
                      ref_size_bins=ref_size_bins, allow_duplicate_tp=allow_duplicate_tp, pct_size=pct_size,
-                     min_ref_size=min_ref_size, max_ref_size=max_ref_size)
+                     min_ref_size=min_ref_size, max_ref_size=max_ref_size, ignore_svtype=ignore_svtype,
+                     dups_and_ins_equivalent=dups_and_ins_equivalent)
             print("-"*45, file=stderr)
 
     else:
