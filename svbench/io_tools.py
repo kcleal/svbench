@@ -1027,6 +1027,7 @@ class CallSet:
                 done = False
                 try:
                     d["GT"] = str(samps[0]["GT"])
+                    done = True
                 except IndexError:
                     pass
 

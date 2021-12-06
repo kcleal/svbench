@@ -107,7 +107,7 @@ def reference_calls_found(ref_data, query_data):
 
 
 def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim=None, show=True, refs=None, save_name=None,
-         alpha=0.6, markersize=3, keep_duplicates=False, colors_iter=None, stratify=True):
+         alpha=0.6, markersize=3, keep_duplicates=False, colors_iter=None, stratify=True, figsize=(7, 4)):
     choices = {'Total', 'TP', 'FP', 'FN', 'Duplication', 'Precision', 'Sensitivity', 'DTP', "F1", "Recall"}
     if x not in choices or y not in choices:
         raise ValueError("x and y must be one of: ", choices)
@@ -133,7 +133,7 @@ def plot(query_data, x="TP", y="Precision", y2=None, xlim=None, ylim=None, y2lim
 
         grp = list(grp)
 
-        plt.figure(figsize=(7, 4))
+        plt.figure(figsize=figsize)
         ax = plt.subplot(111)
         plt.subplots_adjust(right=0.6)
         plt.title(ref_name)
