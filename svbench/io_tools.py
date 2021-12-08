@@ -681,9 +681,12 @@ class CallSet:
             df = v.breaks_df
             if df is not None and ol_tree is not None:
                 for index, chrom, start, chrom2, end in zip(df.index, df.chrom, df.start, df.chrom2, df.end):
-                    if ol_tree and chrom in ol_tree:
-                        if not any(ol_tree[chrom].ncls.find_overlap(start, start + 1)) or not any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
+                    if ol_tree:
+                        if chrom not in ol_tree:
                             bad_i.add(index)
+                        else:
+                            if not any(ol_tree[chrom].ncls.find_overlap(start, start + 1)) or not any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
+                                bad_i.add(index)
             v.breaks_df = v.breaks_df.drop(bad_i)
 
         print("Filtered by include_bed, caller={}, dataset={} rows before {}, after {}".format(v.caller, v.dataset,
