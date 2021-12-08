@@ -1026,7 +1026,7 @@ class CallSet:
             if load_genotype:
                 samps = r.__getattribute__("samples")
                 if len(samps) > 1:
-                    raise ValueError("Cannot parse genotype for multi-sample vcf")
+                    raise ValueError("Cannot parse genotype for multi-sample vcf, set load_genotype=False")
                 done = False
                 try:
                     d["GT"] = str(samps[0]["GT"])
