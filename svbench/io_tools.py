@@ -917,6 +917,10 @@ class CallSet:
                     end = start + 1
                 else:
                     end = int(r.ALT[0].pos)
+
+
+
+
             else:
                 chrom2 = chrom
                 if "CHR2" in r.INFO:
