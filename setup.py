@@ -15,8 +15,4 @@ setup(
         ],
     packages=find_packages(where="."),
     include_package_data=True,
-    # entry_points='''
-    #     [console_scripts]
-    #     svbench=svbench.io_tools:apply_model
-    # ''',
 )
