@@ -902,9 +902,9 @@ class CallSet:
                 continue
 
             svlen = -1
+            if r.ID.endswith("_2"):  # Skip second part of BND, or multirow record
+                continue
             if svtype == "BND":
-                if "_2" in r.ID:  # Skip second part of BND record
-                    continue
                 if r.ALT[0] is None:
                     continue
                 try:
@@ -917,9 +917,6 @@ class CallSet:
                     end = start + 1
                 else:
                     end = int(r.ALT[0].pos)
-
-
-
 
             else:
                 chrom2 = chrom
@@ -1027,10 +1024,10 @@ class CallSet:
                     new_cols = list(parsed.keys())
                 d.update(parsed)
 
-            if load_genotype:
-                samps = r.__getattribute__("samples")
-                if len(samps) > 1:
-                    raise ValueError("Cannot parse genotype for multi-sample vcf, set load_genotype=False")
+            samps = r.__getattribute__("samples")
+            if load_genotype and len(samps) == 1:
+                # if len(samps) > 1:
+                    # raise ValueError("Cannot parse genotype for multi-sample vcf, set load_genotype=False")
                 done = False
                 try:
                     d["GT"] = str(samps[0]["GT"])
@@ -1039,11 +1036,13 @@ class CallSet:
                     pass
 
                 if not done:
-                    try:
-                        d["GT"] = r.INFO["GT"]
-                    except KeyError:
-                        pass
+                    # try:
+                    #     d["GT"] = r.INFO["GT"]
+                    # except KeyError:
+                    #     pass
                     d["GT"] = "NA"
+            else:
+                d["GT"] = "NA"
 
             res.append(d)
 
@@ -1067,7 +1066,7 @@ class CallSet:
         base_cols = ["chrom", "start", "chrom2", "end", "svtype", "w", "strata", "id", "size_filter_pass", "svlen", "filter"]
         if load_genotype:
             base_cols.append("GT")
-            df["GT"] = df["GT"].str.replace("|", "/")
+            df["GT"] = [i.replace("|", "/") if isinstance(i, str) else i for i in df["GT"]] #df["GT"].str.replace("|", "/")
         df = df[[i for i in base_cols if i in df.columns] + new_cols]
 
         self.breaks_df = df
