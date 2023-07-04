@@ -1774,12 +1774,13 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         s = np.append(s, [s.sum()])
         s2, _ = np.histogram(ref_bedpe["svlen"], ref_size_bins)
         s2 = np.append(s2, [s2.sum()])
-        sens = s / s2
 
-        s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
-        s_fp = np.append(s_fp, [s_fp.sum()])
-        prec = s / (s + s_fp)
-        f1 = 2 * ((prec * sens) / (prec + sens))
+        with np.errstate(divide='ignore', invalid='ignore'):
+            sens = s / s2
+            s_fp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["TP"]) if i == i and not j], ref_size_bins)
+            s_fp = np.append(s_fp, [s_fp.sum()])
+            prec = s / (s + s_fp)
+            f1 = 2 * ((prec * sens) / (prec + sens))
 
         # Duplicated are currently filtered before this step
         # s_dtp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["DTP"]) if i == i and j], ref_size_bins)
