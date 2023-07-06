@@ -634,7 +634,7 @@ class CallSet:
         df = cs.breaks_df
 
         if keep_translocations:
-            size_filter = ((df["svlen"] >= min_s) & (df["svlen"] < max_s)) | (df["chrom1"] != df["chrom2"])
+            size_filter = ((df["svlen"] >= min_s) & (df["svlen"] < max_s)) | (df["chrom"] != df["chrom2"])
         else:
             size_filter = (df["svlen"] >= min_s) & (df["svlen"] < max_s)
 
@@ -742,7 +742,7 @@ class CallSet:
             return cols
 
     def load_vcf(self, path, weight_field=None,
-                 no_translocations=True, allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
+                 allowed_svtypes=None, keep=None, stratify=None, allowed_chroms=None,
                  min_size=None, max_size=None, soft_size_filter=False,
                  other_cols=None, include_bed=None, include_if="both", load_genotype=True):
         """Load variants from the vcf file path.
@@ -752,7 +752,6 @@ class CallSet:
         :param weight_field: The field used to weight a variant, useful for breaking ties between similar variants when \
         benchmarking
         :type weight_field: svbench.Col
-        :param no_translocations: Ignore translocations when loading file
         :type no_translocations: bool
         :param allowed_svtypes: The types of SVs allowed, comma seperated string e.g. "DEL", or "DEL,DUP,INV" etc
         :type allowed_svtypes: str
@@ -917,7 +916,8 @@ class CallSet:
                     end = start + 1
                 else:
                     end = int(r.ALT[0].pos)
-
+                if chrom.startswith("chr") and not chrom2.startswith("chr"):
+                    chrom2 = "chr" + chrom2
             else:
                 chrom2 = chrom
                 if "CHR2" in r.INFO:
@@ -926,12 +926,19 @@ class CallSet:
                         chrom2 = "chr" + chrom2
 
                 done = False
-                if "END" in r.INFO:
-                    end = r.INFO["END"]
-                    if isinstance(end, list):
-                        end = end[0]
-                    end = int(end)
-                    done = True
+                if "END" in r.INFO or "CHR2_POS" in r.INFO:
+                    if "CHR2_POS" in r.INFO:
+                        end = r.INFO["CHR2_POS"]
+                        if isinstance(end, list):
+                            end = end[0]
+                        end = int(end)
+                        done = True
+                    else:
+                        end = r.INFO["END"]
+                        if isinstance(end, list):
+                            end = end[0]
+                        end = int(end)
+                        done = True
                 elif svtype in ("DEL", "DUP", "INV") and "SVLEN" in r.INFO:
                     svlen = r.INFO["SVLEN"]
                     if isinstance(svlen, list):
@@ -939,7 +946,6 @@ class CallSet:
                     end = start + svlen
                     done = True
                 else:  # Try and use ALT / REF lengths
-
                     if r.INFO["SVTYPE"] == "DEL" or (isinstance(r.INFO["SVTYPE"], list) and r.INFO["SVTYPE"][0] == "DEL"):
                         svlen = len(r.REF) if r.ALT is not isinstance(r.REF, list) else r.REF[0]
                         end = r.POS + svlen
@@ -1058,7 +1064,6 @@ class CallSet:
             for k, v in item_key.items():
                 for ec in new_cols:
                     ecs = ec.split(":")
-
                     if ecs[0] == k or (ecs[0], ecs[1]) == k:
                         df[ec] = v.norm(df[ec], self.kwargs)
 
@@ -1195,7 +1200,6 @@ class CallSet:
             df["id"] = df_in[id_field]
         else:
             df["id"] = df.index
-        print(df.head(), file=stderr)
 
         if allowed_chroms:
             if not isinstance(allowed_chroms, set):
@@ -1510,17 +1514,18 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     for query_idx, chrom, start, chrom2, end, svtype, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
                                                        dta["svtype"], dta["w"]):
-
         if chrom == chrom2 and start == end:
             end += 1  # prevent 0 width interval
         chrom, start, chrom2, end = sv_key(chrom, start, chrom2, end)
 
         ol_start = intersecter(tree, chrom, start, start + 1)
         if not ol_start:
+            # print("FALSE1", chrom, start, chrom2, end, svtype, file=stderr)
             continue
 
         ol_end = intersecter(tree, chrom2, end, end + 1)
         if not ol_end:
+            # print("FALSE2", chrom, start, chrom2, end, svtype, file=stderr)
             continue
 
         # if start == 57861455:
@@ -1535,62 +1540,50 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         # Choose an index by highest weight/lowest total distance, meeting reciprocal_overlap threshold
         min_d = 1e12
         chosen_index = None
-
+        ref_chrom, ref_start, ref_chrom2, ref_end = None, None, None, None
         for index in common_idxs:
-
             try:
                 ref_row = ref_bedpe.loc[index]
             except IndexError:
                 raise ("Index error", index, " Try re-setting intervals")
-
             ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"],
                                                                ref_row["chrom2"], ref_row["end"])
-
             # Make sure chromosomes match
             if chrom != ref_chrom or chrom2 != ref_chrom2:
                 continue
-
             if not ignore_svtype and ref_row["svtype"] != svtype:
                 if dups_and_ins_equivalent and svtype in ("DUP", "INS") and ref_row["svtype"] in ("DUP", "INS"):
                     pass
+                if svtype == "BND" or ref_row["svtype"] == "BND":  # lenient match
+                    pass
                 else:
                     continue
-
             # If intra-chromosomal, check reciprocal overlap
             if chrom == chrom2:
-
                 if "svlen" in ref_row:
                     ref_size = ref_row["svlen"] + 1e-6
                 else:
                     ref_size = ref_end - ref_start + 1e-3
-
                 if min_ref_size is not None:
                     if ref_size < min_ref_size:
                         continue
-
                 if max_ref_size is not None:
                     if ref_size >= max_ref_size:
                         continue
-
                 if "svlen" in dta:
                     query_size = dta["svlen"].loc[query_idx] + 1e-6
                 else:
                     query_size = end - start + 1e-6
-
                 ol = float(max(0, min(end, ref_end) - max(start, ref_start)))
-
                 if pct_size > 0:
                     pct = min(ref_size, query_size) / max(ref_size, query_size)
                     if pct < pct_size:
                         continue
-
                 if reciprocal_overlap > 0:
                     if (ol / query_size < reciprocal_overlap) and (ol / ref_size < reciprocal_overlap):
                         continue
-
                 if force_intersection and ol == 0:
                     continue
-
             dis = abs(ref_start - start) + abs(ref_end - end)
             if dis < min_d:
                 min_d = dis
@@ -1598,6 +1591,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
         if chosen_index is not None:
             G.add_edge(('t', chosen_index), ('q', query_idx), dis=min_d, weight=w)
+            # print(chosen_index, query_idx, (ref_chrom, ref_start), (ref_chrom2, ref_end), chrom, start, chrom2, end, svtype, file=stderr)
 
         # if start == 57861455:
         #     print(common_idxs)
@@ -1610,33 +1604,26 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
     # Make partitions bipartite-matching i.e. one reference call matched to one query call
     for sub in nx.connected_components(G):
         sub = list(sub)
-
         if len(sub) == 2:  # One ref matches one query, easy case
-
             if sub[0][0] == "q":
                 good_idxs[sub[0][1]] = sub[1][1]
             else:  # t first
                 good_idxs[sub[1][1]] = sub[0][1]
             continue
-
         else:
             bi_count = Counter([i[0] for i in sub])
-
             if bi_count["t"] == 1 or bi_count["q"] == 1:  # Choose best edge
                 ref_node = [i for i in sub if i[0] == "t"][0]
                 out_edges = list(G.edges(ref_node, data=True))
                 found, others = best_index(out_edges, key="q")
                 good_idxs.update(found)
                 duplicate_idxs.update(others)
-
             else:  # Do multi with the maximum-bipartite-matching
                 print("Maximum bipartite matching not implemented", file=stderr)
                 quit()
         continue
-
     df = data.breaks_df
     index = df.index  # Use the original IDs?
-
     if good_indexes_only:
         return [i in good_idxs for i in index]
 
@@ -1648,11 +1635,9 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     df["TP"] = [i in good_idxs for i in index]
     df["DTP"] = [i in duplicate_idxs for i in index]
-
     df["ref_index"] = [good_idxs[i] if i in good_idxs else duplicate_idxs[i] if i in duplicate_idxs
                                   else None for i in index]
     df["FP"] = [not i and not j for i, j in zip(df["DTP"], df["TP"])]
-
     if "svlen" in ref_bedpe:
         df["ref_size"] = [abs(ref_bedpe["svlen"].loc[good_idxs[i]]) if
                           (i in good_idxs and dta.loc[i]["chrom"] == dta.loc[i]["chrom2"]) else None
@@ -1664,7 +1649,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                                       for i in index]
 
     n_in_ref = len(ref_bedpe)
-
     if stratify and data.stratify_range is not None:
         rng = data.stratify_range
     else:
@@ -1672,13 +1656,9 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
 
     data.breaks_df = df
     dta = df
-
     ts = []
-
     for threshold in rng:
-
         if threshold is None or len(dta) == 0:
-
             t = {"Total": len(dta),
                  "Ref": n_in_ref,
                  "DTP": np.sum(np.in1d(dta["DTP"], True)),
@@ -1706,7 +1686,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     t["F1"] = None
             else:
                 t.update({"F1": None, "Precision": None, "Recall": None})
-
             ts.append(t)
 
         else:
@@ -1721,7 +1700,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                      "Caller": data.caller,
                      }
                 t["FN"] = n_in_ref - t["TP"]
-
                 if len(good_idxs) > 0:
                     t["Duplication"] = t["DTP"] / len(good_idxs)
                 else:
@@ -1734,7 +1712,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     t.update({"Precision": round(float(t["TP"]) / sub_total, 4),
                               "Recall": round(float(t["TP"]) / t["Ref"], 4)})
                     t.update({"F1": round(2 * ((t["Precision"] * t["Recall"]) / (t["Precision"] + t["Recall"] + 1e-6)), 4)})
-
                 ts.append(t)
 
     if len(ts) == 0:
