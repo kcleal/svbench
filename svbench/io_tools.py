@@ -634,9 +634,9 @@ class CallSet:
         df = cs.breaks_df
 
         if keep_translocations:
-            size_filter = ((df["svlen"] >= min_s) & (df["svlen"] < max_s)) | (df["chrom"] != df["chrom2"])
+            size_filter = np.array([True if ((svlen >= min_s and svlen < max_s) or chrom1 != chrom2 or svlen is None or svlen != svlen) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
         else:
-            size_filter = (df["svlen"] >= min_s) & (df["svlen"] < max_s)
+            size_filter = np.array([True if ((svlen >= min_s and svlen < max_s) or svlen is None or svlen != svlen) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
 
         df["size_filter_pass"] = size_filter
         if not soft:
@@ -885,8 +885,13 @@ class CallSet:
                 if lr > 1 or la > 1:
                     if lr > la:
                         r.INFO["SVTYPE"] = "DEL"
+                        svtype = "DEL"
                     else:
                         r.INFO["SVTYPE"] = "INS"
+                        svtype = "INS"
+                else:
+                    r.INFO["SVTYPE"] = "BND"
+                    svtype = "BND"
 
             try:
                 if allowed_svtypes is not None and svtype not in allowed_svtypes:
@@ -901,7 +906,7 @@ class CallSet:
                 continue
 
             svlen = -1
-            if r.ID.endswith("_2"):  # Skip second part of BND, or multirow record
+            if isinstance(r.ID, str) and r.ID.endswith("_2"):  # Skip second part of BND, or multirow record
                 continue
             if svtype == "BND":
                 if r.ALT[0] is None:
@@ -1512,25 +1517,32 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         data.false_negative_indexes = ref_bedpe.index
         return
 
-    for query_idx, chrom, start, chrom2, end, svtype, w in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
-                                                       dta["svtype"], dta["w"]):
+    for query_idx, chrom, start, chrom2, end, svtype, w, d_id in zip(dta.index, dta["chrom"], dta["start"], dta["chrom2"], dta["end"],
+                                                       dta["svtype"], dta["w"], dta["id"]):
         if chrom == chrom2 and start == end:
             end += 1  # prevent 0 width interval
         chrom, start, chrom2, end = sv_key(chrom, start, chrom2, end)
 
         ol_start = intersecter(tree, chrom, start, start + 1)
+        # if d_id == '54109':
+        #     print('start', ol_start, (start, start+1), file=stderr)
+        #     quit()
         if not ol_start:
             # print("FALSE1", chrom, start, chrom2, end, svtype, file=stderr)
             continue
 
         ol_end = intersecter(tree, chrom2, end, end + 1)
+        # if d_id == '54109':
+        #     print('end', ol_end, file=stderr)
+        #     quit()
         if not ol_end:
             # print("FALSE2", chrom, start, chrom2, end, svtype, file=stderr)
             continue
 
-        # if start == 57861455:
-        #     print(ol_start)
-        #     print(ol_end)
+        # if d_id == '54109':
+        #     print(ol_start, file=stderr)
+        #     print(ol_end, file=stderr)
+        #     quit()
 
         # Get the ref_data index
         common_idxs = set([i[2] for i in ol_start]).intersection([i[2] for i in ol_end])
@@ -1807,3 +1819,5 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             if show_table:
                 print("GT scores:", file=stderr)
                 print(data.gt_scores, file=stderr)
+
+    # print(data.breaks_df[data.breaks_df["FP"]], file=stderr)
