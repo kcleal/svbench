@@ -864,9 +864,20 @@ class CallSet:
                 continue
 
             if "MATEID" in r.INFO:
-                if r.INFO["MATEID"] in ignore_mates:
-                    continue
-                ignore_mates.add(r.INFO["MATEID"])
+                mate = r.INFO["MATEID"]
+                if isinstance(mate, str):
+                    if mate in ignore_mates:
+                        continue
+                    ignore_mates.add(mate)
+                elif isinstance(mate, list)
+                    skip_this = False
+                    for m in mates:
+                        if m in ignore_mates:
+                            skip_this = True
+                            break
+                        ignore_mates.add(m)
+                    if skip_this:
+                            continue
 
             start = int(r.POS)
 
