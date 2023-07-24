@@ -938,6 +938,8 @@ class CallSet:
                     end = start + 1
                 else:
                     end = int(r.ALT[0].pos)
+                if chrom2 is None:
+                    chrom2 = chrom  # give up
                 if chrom.startswith("chr") and not chrom2.startswith("chr"):
                     chrom2 = "chr" + chrom2
             else:
