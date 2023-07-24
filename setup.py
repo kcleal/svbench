@@ -11,7 +11,7 @@ setup(
             'networkx>=2.4',
             'ncls',
             'pyvcf3',
-            'matplotlib'
+            'matplotlib', 'click'
         ],
     packages=find_packages(where="."),
     include_package_data=True,
