@@ -869,7 +869,7 @@ class CallSet:
                     if mate in ignore_mates:
                         continue
                     ignore_mates.add(mate)
-                elif isinstance(mate, list)
+                elif isinstance(mate, list):
                     skip_this = False
                     for m in mates:
                         if m in ignore_mates:
