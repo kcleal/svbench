@@ -816,6 +816,7 @@ class CallSet:
 
         new_cols = []
         unique_ids = set([])
+        ignore_mates = set([])
 
         if path in "-stdin":
             temp = StringIO()
@@ -861,6 +862,11 @@ class CallSet:
 
             if "#" in chrom:
                 continue
+
+            if "MATEID" in r.INFO:
+                if r.INFO["MATEID"] in ignore_mates:
+                    continue
+                ignore_mates.add(r.INFO["MATEID"])
 
             start = int(r.POS)
 
