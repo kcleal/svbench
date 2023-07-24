@@ -4,3 +4,4 @@ networkx>=2.4
 ncls
 pyvcf
 matplotlib
+click
