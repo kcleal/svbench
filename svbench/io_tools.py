@@ -871,7 +871,7 @@ class CallSet:
                     ignore_mates.add(mate)
                 elif isinstance(mate, list):
                     skip_this = False
-                    for m in mates:
+                    for m in mate:
                         if m in ignore_mates:
                             skip_this = True
                             break
