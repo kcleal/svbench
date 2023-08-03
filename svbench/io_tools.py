@@ -685,7 +685,9 @@ class CallSet:
                         if chrom not in ol_tree:
                             bad_i.add(index)
                         else:
-                            if not any(ol_tree[chrom].ncls.find_overlap(start, start + 1)) or not any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
+                            if chrom not in ol_tree or (chrom2 != chrom and chrom2 not in ol_tree):
+                                bad_i.add(index)
+                            elif not any(ol_tree[chrom].ncls.find_overlap(start, start + 1)) or not any(ol_tree[chrom2].ncls.find_overlap(end, end + 1)):
                                 bad_i.add(index)
             v.breaks_df = v.breaks_df.drop(bad_i)
 
