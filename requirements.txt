@@ -2,6 +2,6 @@ numpy
 pandas
 networkx>=2.4
 ncls
-pyvcf
+vcfpy
 matplotlib
 click

@@ -4,12 +4,10 @@ import numpy as np
 import vcf
 import operator
 import datetime
-import pkg_resources
+from importlib.metadata import version
 import copy
-import pickle
 from sys import stderr, stdin
 import gzip
-import time
 from io import StringIO
 import networkx as nx
 from collections import Counter
@@ -19,6 +17,7 @@ import os
 
 __all__ = ["Col", "CallSet", "concat_dfs"]
 
+svbench_version = version("svbench")
 
 class Col:
     """This is a column parser class. The input column must be index-able by 'col' argument. Subfields are accessed
@@ -422,7 +421,7 @@ class CallSet:
                                                                                "drop_first_row",
                                                                                "svtype_field"}}
 
-        self.meta_data = {"svbench": pkg_resources.get_distribution("svbench").version,
+        self.meta_data = {"svbench": svbench_version,
                           "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
         # Update any provided kwargs
@@ -472,46 +471,6 @@ class CallSet:
         n.breaks_df = n.breaks_df[np.array(matching_indexes)]
         n.tree = None
         return n
-
-        # This didnt work as expected
-        # print("Matching", matching_indexes)
-        # quit()
-        # # starts, ends , indexes are all defaultdict, keys=chromosomes
-        # starts, ends, indexes = get_interval_arrays(list(zip(this_df["chrom"], this_df["start"], this_df["chrom2"],
-        #                                             this_df["end"], this_df.index)), self.slop)
-        #
-        # # chr2:192559403-192559731
-        # other_tree = other.tree
-        # #print([i for i in other.breaks_df["end"] if i == 24403011])
-        # bad_indexes = set([])
-        # for chrom in starts.keys():
-        #     if chrom in other_tree:
-        #         l_idxs, r_idxs = other_tree[chrom].ncls.all_overlaps_both(starts[chrom], ends[chrom], indexes[chrom])
-        #         bad_indexes |= set(l_idxs)
-        # print(f"Droppping {len(bad_indexes)} out of {len(this_df)}", file=stderr)
-        # self.breaks_df = this_df.drop(list(bad_indexes))
-        # self.add_intervals(self.slop)
-        # return self
-    # Needs fixing, as above
-    # def __iand__(self, other):
-    #     if not isinstance(other, CallSet):
-    #         raise ValueError("Calling add on {}, should be instance of CallSet".format(type(other)))
-    #     if self.tree is None or other.tree is None:
-    #         raise ValueError("Call add_intervals on both CallSet's before subtracting")
-    #     this_df = self.breaks_df
-    #     good_indexes = set([])
-    #     starts, ends, indexes = get_interval_arrays(list(zip(this_df["chrom"], this_df["start"], this_df["chrom2"],
-    #                                                          this_df["end"], this_df.index)), self.slop)
-    #
-    #     other_tree = other.tree
-    #     for chrom in starts.keys():
-    #         if chrom in other_tree:
-    #             l_idxs, r_idxs = other_tree[chrom].ncls.all_overlaps_both(starts[chrom], ends[chrom], indexes[chrom])
-    #             good_indexes |= set(l_idxs)
-    #
-    #     self.breaks_df = this_df.loc[sorted(good_indexes)]
-    #     self.add_intervals(self.slop)
-    #     return self
 
     def add_intervals(self, slop=250, interval_type="breakpoint"):
         """Adds intervals to loaded data defined in self.breaks_df.
@@ -926,22 +885,40 @@ class CallSet:
             if isinstance(r.ID, str) and r.ID.endswith("_2"):  # Skip second part of BND, or multirow record
                 continue
             if svtype == "BND":
-                if r.ALT[0] is None:
-                    continue
-                try:
-                    chrom2 = r.ALT[0].chr
-                    end = r.ALT[0].pos
-                except AttributeError:
-                    print("Error parsing", r, file=stderr)
-                    continue
-                if end is None:
-                    end = start + 1
-                else:
-                    end = int(r.ALT[0].pos)
-                if chrom2 is None:
-                    chrom2 = chrom  # give up
-                if chrom.startswith("chr") and not chrom2.startswith("chr"):
-                    chrom2 = "chr" + chrom2
+                done = False
+                if "CHR2" in r.INFO:
+                    chrom2 = r.INFO["CHR2"]
+                    if "CHR2_POS" in r.INFO:
+                        end = r.INFO["CHR2_POS"]
+                        done = True
+                    if "END" in r.INFO:
+                        if isinstance(r.INFO["END"], str):
+                            try:
+                                _, pos2 = r.INFO["END"].replace("N", "").replace("[", "").replace("]", "").split(":")
+                                end = int(pos2)
+                                done = True
+                            except:
+                                pass
+                        elif isinstance(r.INFO["END"], int):
+                            end = r.INFO["END"]
+                            done = True
+                if not done:
+                    if r.ALT[0] is None:
+                        continue
+                    try:
+                        chrom2 = r.CHROM
+                        end = r.end
+                    except AttributeError:
+                        print("AttributeError parsing", r.ID, file=stderr)
+                        continue
+                    if end is None:
+                        end = start + 1
+                    else:
+                        end = r.POS
+                    if chrom2 is None:
+                        chrom2 = chrom  # give up
+                    if chrom.startswith("chr") and not chrom2.startswith("chr"):
+                        chrom2 = "chr" + chrom2
             else:
                 chrom2 = chrom
                 if "CHR2" in r.INFO:
