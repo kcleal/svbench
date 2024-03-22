@@ -894,9 +894,14 @@ class CallSet:
                     if "END" in r.INFO:
                         if isinstance(r.INFO["END"], str):
                             try:
-                                _, pos2 = r.INFO["END"].replace("N", "").replace("[", "").replace("]", "").split(":")
-                                end = int(pos2)
-                                done = True
+                                if "[" in r.ALT[0]:
+                                    chrom2, pos2 = [i for i in r.ALT[0].split("[") if ":" in i][0].split(":")
+                                    end = int(pos2)
+                                    done = True
+                                elif "]" in r.ALT[0]:
+                                    chrom2, pos2 = [i for i in r.ALT[0].split("]") if ":" in i][0].split(":")
+                                    end = int(pos2)
+                                    done = True
                             except:
                                 pass
                         elif isinstance(r.INFO["END"], int):
@@ -906,19 +911,26 @@ class CallSet:
                     if r.ALT[0] is None:
                         continue
                     try:
-                        chrom2 = r.CHROM
-                        end = r.end
-                    except AttributeError:
-                        print("AttributeError parsing", r.ID, file=stderr)
-                        continue
-                    if end is None:
-                        end = start + 1
-                    else:
-                        end = r.POS
-                    if chrom2 is None:
-                        chrom2 = chrom  # give up
-                    if chrom.startswith("chr") and not chrom2.startswith("chr"):
-                        chrom2 = "chr" + chrom2
+                        chrom2 = r.ALT[0].chr
+                        end = r.ALT[0].pos
+                        done = True
+                    except:
+                        pass
+                    if not done:
+                        try:
+                            chrom2 = r.CHROM
+                            end = r.end
+                        except AttributeError:
+                            print("AttributeError parsing", r.ID, file=stderr)
+                            continue
+                        if end is None:
+                            end = start + 1
+                        else:
+                            end = r.POS
+                        if chrom2 is None:
+                            chrom2 = chrom  # give up
+                if chrom.startswith("chr") and not chrom2.startswith("chr"):
+                    chrom2 = "chr" + chrom2
             else:
                 chrom2 = chrom
                 if "CHR2" in r.INFO:

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="svbench",
-    version='0.7.6',
+    version='0.7.8',
     license='MIT',
     python_requires='>=3.7',
     install_requires=[
@@ -10,7 +10,7 @@ setup(
             'pandas',
             'networkx>=2.4',
             'ncls',
-            'pyvcf3',
+            'vcfpy',
             'matplotlib', 'click'
         ],
     packages=find_packages(where="."),
