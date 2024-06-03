@@ -593,9 +593,9 @@ class CallSet:
         df = cs.breaks_df
 
         if keep_translocations:
-            size_filter = np.array([True if ((svlen >= min_s and svlen < max_s) or chrom1 != chrom2 or svlen is None or svlen != svlen) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
+            size_filter = np.array([True if chrom1 != chrom2 or svlen is None or svlen != svlen or ((svlen >= min_s and svlen < max_s)) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
         else:
-            size_filter = np.array([True if ((svlen >= min_s and svlen < max_s) or svlen is None or svlen != svlen) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
+            size_filter = np.array([True if svlen is None or svlen != svlen or ((svlen >= min_s and svlen < max_s)) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
 
         df["size_filter_pass"] = size_filter
         if not soft:
@@ -839,7 +839,7 @@ class CallSet:
                             continue
 
             start = int(r.POS)
-
+            svlen = None
             if ol_tree and chrom in ol_tree:
                 if any(ol_tree[chrom].ncls.find_overlap(start, start + 1)):
                     ol_start = True
@@ -865,6 +865,8 @@ class CallSet:
                     else:
                         r.INFO["SVTYPE"] = "INS"
                         svtype = "INS"
+                        r.INFO["SVLEN"] = la
+                        svlen = la
                 else:
                     r.INFO["SVTYPE"] = "BND"
                     svtype = "BND"
@@ -881,7 +883,7 @@ class CallSet:
             if keep is not None and not check_passed(operations, r, keep):
                 continue
 
-            svlen = -1
+
             if isinstance(r.ID, str) and r.ID.endswith("_2"):  # Skip second part of BND, or multirow record
                 continue
             if svtype == "BND":
@@ -937,7 +939,6 @@ class CallSet:
                     chrom2 = r.INFO["CHR2"]
                     if chrom2[0] != "c":
                         chrom2 = "chr" + chrom2
-
                 done = False
                 if "END" in r.INFO or "CHR2_POS" in r.INFO:
                     if "CHR2_POS" in r.INFO:
@@ -952,7 +953,7 @@ class CallSet:
                             end = end[0]
                         end = int(end)
                         done = True
-                elif svtype in ("DEL", "DUP", "INV") and "SVLEN" in r.INFO:
+                elif svtype in ("DEL", "DUP", "INV", "INS") and "SVLEN" in r.INFO:
                     svlen = r.INFO["SVLEN"]
                     if isinstance(svlen, list):
                         svlen = svlen[0]
@@ -986,33 +987,37 @@ class CallSet:
                     continue
 
             size_filter = True
-
-            if chrom == chrom2:
-                if "SVLEN" in r.INFO:
-                    svlen = r.INFO["SVLEN"]
-                    if isinstance(svlen, list):
-                        svlen = svlen[0]
-
-                    if svlen is None:
-                        svlen = None
-                    else:
-                        svlen = abs(svlen)
-
-                else:
-                    svlen = abs(end - start)
-                    if svlen < 2 and "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
-                        svlen = min_size
-
-                if min_size is not None and svlen < min_size:
-                    if not soft_size_filter:
-                        continue
-                    else:
-                        size_filter = False
-                if max_size is not None and svlen >= max_size:
-                    if not soft_size_filter:
-                        continue
-                    else:
-                        size_filter = False
+            # print(done)
+            # if chrom == chrom2:
+            #     if "SVLEN" in r.INFO:
+            #         svlen = r.INFO["SVLEN"]
+            #         if isinstance(svlen, list):
+            #             svlen = svlen[0]
+            #
+            #         if svlen is None:
+            #             svlen = -1
+            #         else:
+            #             svlen = abs(svlen)
+            #     elif "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
+            #         svlen = abs(end - start)
+            #     else:
+            #        print(done)
+            #
+            #     # else:
+            #     #     svlen = abs(end - start)
+            #     #     if min_size is not None and svlen < 2 and "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
+            #     #         svlen = min_size
+            #
+            #     if min_size is not None and svlen < min_size:
+            #         if not soft_size_filter:
+            #             continue
+            #         else:
+            #             size_filter = False
+            #     if max_size is not None and svlen >= max_size:
+            #         if not soft_size_filter:
+            #             continue
+            #         else:
+            #             size_filter = False
 
             if allowed_chroms is not None and chrom2 not in allowed_chroms:
                 continue
@@ -1580,7 +1585,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     continue
             # If intra-chromosomal, check reciprocal overlap
             if chrom == chrom2:
-                if "svlen" in ref_row:
+                if "svlen" in ref_row and ref_row['svlen'] is not None:
                     ref_size = ref_row["svlen"] + 1e-6
                 else:
                     ref_size = ref_end - ref_start + 1e-3
@@ -1590,7 +1595,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                 if max_ref_size is not None:
                     if ref_size >= max_ref_size:
                         continue
-                if "svlen" in dta:
+                if "svlen" in dta and dta['svlen'].loc[query_idx] is not None:
                     query_size = dta["svlen"].loc[query_idx] + 1e-6
                 else:
                     query_size = end - start + 1e-6
