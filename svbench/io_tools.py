@@ -593,9 +593,9 @@ class CallSet:
         df = cs.breaks_df
 
         if keep_translocations:
-            size_filter = np.array([True if chrom1 != chrom2 or svlen is None or svlen != svlen or ((svlen >= min_s and svlen < max_s)) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
+            size_filter = np.array([True if chrom1 != chrom2 or svlen is None or svlen != svlen or (svlen >= min_s and svlen < max_s) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
         else:
-            size_filter = np.array([True if svlen is None or svlen != svlen or ((svlen >= min_s and svlen < max_s)) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
+            size_filter = np.array([True if svlen is None or svlen != svlen or (svlen >= min_s and svlen < max_s) else False for svlen, chrom1, chrom2 in zip(df['svlen'], df['chrom'], df['chrom2'])])
 
         df["size_filter_pass"] = size_filter
         if not soft:
@@ -909,6 +909,7 @@ class CallSet:
                         elif isinstance(r.INFO["END"], int):
                             end = r.INFO["END"]
                             done = True
+
                 if not done:
                     if r.ALT[0] is None:
                         continue
@@ -934,31 +935,33 @@ class CallSet:
                 if chrom.startswith("chr") and not chrom2.startswith("chr"):
                     chrom2 = "chr" + chrom2
             else:
+                done = False
                 chrom2 = chrom
                 if "CHR2" in r.INFO:
                     chrom2 = r.INFO["CHR2"]
                     if chrom2[0] != "c":
                         chrom2 = "chr" + chrom2
-                done = False
-                if "END" in r.INFO or "CHR2_POS" in r.INFO:
+                if svtype in ("DEL", "DUP", "INV", "INS") and "SVLEN" in r.INFO:
+                    svlen = r.INFO["SVLEN"]
+                    if isinstance(svlen, list):
+                        svlen = svlen[0]
+                    end = start + svlen
+                    done = True
+                elif "END" in r.INFO or "CHR2_POS" in r.INFO:
                     if "CHR2_POS" in r.INFO:
                         end = r.INFO["CHR2_POS"]
                         if isinstance(end, list):
                             end = end[0]
                         end = int(end)
                         done = True
+                        svlen = -1
                     else:
                         end = r.INFO["END"]
                         if isinstance(end, list):
                             end = end[0]
                         end = int(end)
                         done = True
-                elif svtype in ("DEL", "DUP", "INV", "INS") and "SVLEN" in r.INFO:
-                    svlen = r.INFO["SVLEN"]
-                    if isinstance(svlen, list):
-                        svlen = svlen[0]
-                    end = start + svlen
-                    done = True
+                        svlen = -1
                 else:  # Try and use ALT / REF lengths
                     if r.INFO["SVTYPE"] == "DEL" or (isinstance(r.INFO["SVTYPE"], list) and r.INFO["SVTYPE"][0] == "DEL"):
                         svlen = len(r.REF) if r.ALT is not isinstance(r.REF, list) else r.REF[0]
@@ -987,7 +990,7 @@ class CallSet:
                     continue
 
             size_filter = True
-            # print(done)
+
             # if chrom == chrom2:
             #     if "SVLEN" in r.INFO:
             #         svlen = r.INFO["SVLEN"]
@@ -1035,7 +1038,7 @@ class CallSet:
             else:
                 r_id = r.ID
                 unique_ids.add(r_id)
-
+            assert svlen is not None
             d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype,
                  "size_filter_pass": size_filter, "svlen": abs(svlen) if svlen else svlen, "filter": r.FILTER}
 
@@ -1585,7 +1588,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     continue
             # If intra-chromosomal, check reciprocal overlap
             if chrom == chrom2:
-                if "svlen" in ref_row and ref_row['svlen'] is not None:
+                if "svlen" in ref_row:
                     ref_size = ref_row["svlen"] + 1e-6
                 else:
                     ref_size = ref_end - ref_start + 1e-3
@@ -1595,7 +1598,7 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                 if max_ref_size is not None:
                     if ref_size >= max_ref_size:
                         continue
-                if "svlen" in dta and dta['svlen'].loc[query_idx] is not None:
+                if "svlen" in dta:
                     query_size = dta["svlen"].loc[query_idx] + 1e-6
                 else:
                     query_size = end - start + 1e-6
@@ -1783,10 +1786,6 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             s_fp = np.append(s_fp, [s_fp.sum()])
             prec = s / (s + s_fp)
             f1 = 2 * ((prec * sens) / (prec + sens))
-
-        # Duplicated are currently filtered before this step
-        # s_dtp, _ = np.histogram([i for i, j in zip(dat["svlen"], dat["DTP"]) if i == i and j], ref_size_bins)
-        # s_dtp = np.append(s_dtp, [s_dtp.sum()])
 
         s_fn, _ = np.histogram([ref_data.breaks_df["svlen"].loc[i] for i in missing_ref_indexes], ref_size_bins)
         s_fn = np.append(s_fn, [s_fn.sum()])
