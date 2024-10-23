@@ -27,7 +27,7 @@ class Col:
     :param col: The key of the primary data field
     :rtype col: str, optional
     :param key: The key of the secondary data field, optional
-    :rtype key: str, optional
+    :rtype key: str, optional1041
 
     """
     def __init__(self, col, key=None, encoding=None, bins=None, norm=None, op=None, thresh=None, add=None):
@@ -777,6 +777,8 @@ class CallSet:
         unique_ids = set([])
         ignore_mates = set([])
 
+        partners = {}
+
         if path in "-stdin":
             temp = StringIO()
             for line in stdin:
@@ -883,12 +885,17 @@ class CallSet:
             if keep is not None and not check_passed(operations, r, keep):
                 continue
 
-
             if isinstance(r.ID, str) and r.ID.endswith("_2"):  # Skip second part of BND, or multirow record
+                partners[r.ID] = r
                 continue
             if svtype == "BND":
                 done = False
-                if "CHR2" in r.INFO:
+                if "SVLEN" in r.INFO and "END" in r.INFO:
+                    svlen = r.INFO["SVLEN"]
+                    chrom2 = chrom
+                    pos2 = r.INFO["END"]
+                    done = True
+                elif "CHR2" in r.INFO:
                     chrom2 = r.INFO["CHR2"]
                     if "CHR2_POS" in r.INFO:
                         end = r.INFO["CHR2_POS"]
@@ -919,19 +926,39 @@ class CallSet:
                         done = True
                     except:
                         pass
-                    if not done:
-                        try:
-                            chrom2 = r.CHROM
-                            end = r.end
-                        except AttributeError:
-                            print("AttributeError parsing", r.ID, file=stderr)
-                            continue
-                        if end is None:
-                            end = start + 1
+                if not done:
+                    try:
+                        chrom2 = r.CHROM
+                        end = r.end
+                    except AttributeError:
+                        print("AttributeError parsing", r.ID, file=stderr)
+                        continue
+                    if end is None:
+                        end = start + 1
+                    else:
+                        end = r.POS
+                    if chrom2 is None:
+                        chrom2 = chrom
+
+                if not done:
+                    other_bnd = None
+                    if r.ID.endswith("_1"):
+                        if r.ID[:-2] + "_2" in partners:
+                            other_bnd = partners[r.ID[:-2] + "_2"]
                         else:
-                            end = r.POS
-                        if chrom2 is None:
-                            chrom2 = chrom  # give up
+                            partners[r.ID] = r  # wait for next partner
+                            continue
+                    elif r.ID.endswith("_2"):
+                        if r.ID[:-2] + "_1" in partners:
+                            other_bnd = partners[r.ID[:-2] + "_1"]
+                        else:
+                            partners[r.ID] = r
+                            continue
+                    if other_bnd is None:  # give up
+                        continue
+                    chrom2 = other_bnd.CHROM
+                    end = other_bnd.POS
+
                 if chrom.startswith("chr") and not chrom2.startswith("chr"):
                     chrom2 = "chr" + chrom2
             else:
@@ -1038,7 +1065,9 @@ class CallSet:
             else:
                 r_id = r.ID
                 unique_ids.add(r_id)
-            assert svlen is not None
+
+            if chrom == chrom2:
+                assert  svlen is not None
             d = {"end": end, "start": start, "chrom": chrom, "chrom2": chrom2, "w": w, "id": r_id, "svtype": svtype,
                  "size_filter_pass": size_filter, "svlen": abs(svlen) if svlen else svlen, "filter": r.FILTER}
 
