@@ -857,7 +857,10 @@ class CallSet:
                 else:
                     lr = len(r.REF)
                 if isinstance(r.ALT, list):
-                    la = len(r.ALT[0])
+                    if type(r.ALT[0]) == str:
+                        la = len(r.ALT[0])
+                    else:
+                        la = 0
                 else:
                     la = len(r.ALT)
                 if lr > 1 or la > 1:
@@ -872,7 +875,6 @@ class CallSet:
                 else:
                     r.INFO["SVTYPE"] = "BND"
                     svtype = "BND"
-
             try:
                 if allowed_svtypes is not None and svtype not in allowed_svtypes:
                     continue
@@ -890,77 +892,70 @@ class CallSet:
                 continue
             if svtype == "BND":
                 done = False
-                if "SVLEN" in r.INFO and "END" in r.INFO:
-                    svlen = r.INFO["SVLEN"]
-                    chrom2 = chrom
-                    pos2 = r.INFO["END"]
-                    done = True
-                elif "CHR2" in r.INFO:
-                    chrom2 = r.INFO["CHR2"]
-                    if "CHR2_POS" in r.INFO:
-                        end = r.INFO["CHR2_POS"]
-                        done = True
-                    if "END" in r.INFO:
-                        if isinstance(r.INFO["END"], str):
-                            try:
-                                if "[" in r.ALT[0]:
-                                    chrom2, pos2 = [i for i in r.ALT[0].split("[") if ":" in i][0].split(":")
-                                    end = int(pos2)
-                                    done = True
-                                elif "]" in r.ALT[0]:
-                                    chrom2, pos2 = [i for i in r.ALT[0].split("]") if ":" in i][0].split(":")
-                                    end = int(pos2)
-                                    done = True
-                            except:
-                                pass
-                        elif isinstance(r.INFO["END"], int):
-                            end = r.INFO["END"]
-                            done = True
 
-                if not done:
-                    if r.ALT[0] is None:
-                        continue
-                    try:
-                        chrom2 = r.ALT[0].chr
-                        end = r.ALT[0].pos
-                        done = True
-                    except:
-                        pass
-                if not done:
-                    try:
-                        chrom2 = r.CHROM
-                        end = r.end
-                    except AttributeError:
-                        print("AttributeError parsing", r.ID, file=stderr)
-                        continue
-                    if end is None:
-                        end = start + 1
+                other_bnd = None
+                if r.ID.endswith("_1") or r.ID.endswith("_5"):
+                    if r.ID[:-2] + "_2" in partners:
+                        other_bnd = partners[r.ID[:-2] + "_2"]
+                    if r.ID[:-2] + "_3" in partners:
+                        other_bnd = partners[r.ID[:-2] + "_3"]
                     else:
-                        end = r.POS
-                    if chrom2 is None:
-                        chrom2 = chrom
-
-                if not done:
-                    other_bnd = None
-                    if r.ID.endswith("_1"):
-                        if r.ID[:-2] + "_2" in partners:
-                            other_bnd = partners[r.ID[:-2] + "_2"]
-                        else:
-                            partners[r.ID] = r  # wait for next partner
-                            continue
-                    elif r.ID.endswith("_2"):
-                        if r.ID[:-2] + "_1" in partners:
-                            other_bnd = partners[r.ID[:-2] + "_1"]
-                        else:
-                            partners[r.ID] = r
-                            continue
-                    if other_bnd is None:  # give up
+                        partners[r.ID] = r  # wait for next partner
                         continue
+                elif r.ID.endswith("_2") or r.ID.endswith("_3"):
+                    if r.ID[:-2] + "_1" in partners:
+                        other_bnd = partners[r.ID[:-2] + "_1"]
+                    elif r.ID[:-2] + "_5" in partners:
+                        other_bnd = partners[r.ID[:-2] + "_5"]
+                    else:
+                        partners[r.ID] = r
+                        continue
+                if other_bnd is not None:
                     chrom2 = other_bnd.CHROM
                     end = other_bnd.POS
+                    if chrom != chrom2:
+                        # svtype = "TRA"
+                        svlen = -1
+                    else:
+                        if start > end:
+                            temp = start
+                            start = end
+                            end = temp
+                        svlen = end - start
+
+                    done = True
+
+                if other_bnd is None:  # dont give up
+                    if "SVLEN" in r.INFO and "END" in r.INFO:
+                        svlen = r.INFO["SVLEN"]
+                        chrom2 = chrom
+                        pos2 = r.INFO["END"]
+                        done = True
+                    elif "CHR2" in r.INFO:
+                        chrom2 = r.INFO["CHR2"]
+                        if "CHR2_POS" in r.INFO:
+                            end = r.INFO["CHR2_POS"]
+                            done = True
+                        if "END" in r.INFO:
+                            if isinstance(r.INFO["END"], str):
+                                try:
+                                    if "[" in r.ALT[0]:
+                                        chrom2, pos2 = [i for i in r.ALT[0].split("[") if ":" in i][0].split(":")
+                                        end = int(pos2)
+                                        done = True
+                                    elif "]" in r.ALT[0]:
+                                        chrom2, pos2 = [i for i in r.ALT[0].split("]") if ":" in i][0].split(":")
+                                        end = int(pos2)
+                                        done = True
+                                except:
+                                    pass
+                            elif isinstance(r.INFO["END"], int):
+                                end = r.INFO["END"]
+                                done = True
 
                 if chrom.startswith("chr") and not chrom2.startswith("chr"):
                     chrom2 = "chr" + chrom2
+
             else:
                 done = False
                 chrom2 = chrom
@@ -1018,37 +1013,6 @@ class CallSet:
 
             size_filter = True
 
-            # if chrom == chrom2:
-            #     if "SVLEN" in r.INFO:
-            #         svlen = r.INFO["SVLEN"]
-            #         if isinstance(svlen, list):
-            #             svlen = svlen[0]
-            #
-            #         if svlen is None:
-            #             svlen = -1
-            #         else:
-            #             svlen = abs(svlen)
-            #     elif "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
-            #         svlen = abs(end - start)
-            #     else:
-            #        print(done)
-            #
-            #     # else:
-            #     #     svlen = abs(end - start)
-            #     #     if min_size is not None and svlen < 2 and "SVTYPE" in r.INFO and r.INFO["SVTYPE"] == "INS":
-            #     #         svlen = min_size
-            #
-            #     if min_size is not None and svlen < min_size:
-            #         if not soft_size_filter:
-            #             continue
-            #         else:
-            #             size_filter = False
-            #     if max_size is not None and svlen >= max_size:
-            #         if not soft_size_filter:
-            #             continue
-            #         else:
-            #             size_filter = False
-
             if allowed_chroms is not None and chrom2 not in allowed_chroms:
                 continue
 
@@ -1082,20 +1046,15 @@ class CallSet:
 
             samps = r.__getattribute__("samples")
             if load_genotype and len(samps) == 1:
-                # if len(samps) > 1:
-                    # raise ValueError("Cannot parse genotype for multi-sample vcf, set load_genotype=False")
                 done = False
+
                 try:
                     d["GT"] = str(samps[0]["GT"])
                     done = True
-                except IndexError:
+                except (IndexError, AttributeError):
                     pass
 
                 if not done:
-                    # try:
-                    #     d["GT"] = r.INFO["GT"]
-                    # except KeyError:
-                    #     pass
                     d["GT"] = "NA"
             else:
                 d["GT"] = "NA"
