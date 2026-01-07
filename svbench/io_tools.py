@@ -1500,7 +1500,7 @@ def best_index(out_edges, key="q"):
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
              good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True,
              pct_size=0.05, ignore_svtype=True, min_ref_size=20, max_ref_size=None, dups_and_ins_equivalent=False,
-             print_fn=False, print_fp=False, print_tp=False, print_dtp=False):
+             print_fn=False, print_fp=False, print_tp=False, print_dtp=False, slop=250):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1565,6 +1565,12 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                     pass
                 else:
                     continue
+            if slop > 0:
+                if abs(ref_start - start) > slop:
+                    continue
+                if abs(ref_end - end) > slop:
+                    continue
+
             # If intra-chromosomal, check reciprocal overlap
             if chrom == chrom2:
                 if "svlen" in ref_row:

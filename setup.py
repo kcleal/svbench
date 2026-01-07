@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="svbench",
-    version='0.8.0',
+    version='0.8.1',
     license='MIT',
     python_requires='>=3.7',
     install_requires=[

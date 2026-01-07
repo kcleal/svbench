@@ -42,7 +42,7 @@ def main(reference_vcf, query_vcfs, include, pass_only, pass_ref, pass_query, sl
     if include:
         [i.filter_include_bed(include, inplace=True) for i in query]
     svb.score(ref, query, allow_duplicate_tp=not no_duplicates, ignore_svtype=False, 
-              print_fn=fn, print_fp=fp, print_tp=tp, print_dtp=dtp)
+              print_fn=fn, print_fp=fp, print_tp=tp, print_dtp=dtp, slop=slop)
 
 
 if __name__ == '__main__':
