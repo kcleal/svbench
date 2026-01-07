@@ -22,18 +22,20 @@ Usage
     
     Options:
       --include PATH            Include regions .bed file
-      --pass-only               Assess only PASS variants in both reference and
-                                query
-      --pass-ref                Assess only PASS variants in reference
-      --pass-query              Assess only PASS variants in query
+      --pass-only               Assess only PASS variants
+      --pass-ref                Assess only PASS variants from reference_vcf
+      --pass-query              Assess only PASS variants from query_vcfs
       --slop INTEGER            Add intervals +/- slop around breakpoints
                                 [default: 250]
       --min-size-ref INTEGER    Min SV length  [default: 0]
       --min-size-query INTEGER  Min SV length  [default: 30]
       --no-duplicates           Don't quantify duplicate true positives
+      --fn                      Print false negatives
+      --fp                      Print false positives
+      --tp                      Print true positives
+      --dtp                     Print duplicate true positives
       --version                 Show the version and exit.
       --help                    Show this message and exit.
-
 
 Benchmark the number of query SVs in a reference/truth set. Results are printed to stderr.::
 
