@@ -712,7 +712,7 @@ class CallSet:
         benchmarking
         :type weight_field: svbench.Col
         :type no_translocations: bool
-        :param allowed_svtypes: The types of SVs allowed, comma seperated string e.g. "DEL", or "DEL,DUP,INV" etc
+        :param allowed_svtypes: The types of SVs allowed, comma seperated string e.g. "DEL", or "DEL,DUP,INV,SKIP" etc
         :type allowed_svtypes: str
         :param keep: A list of filtering operations to perform on input data. e.g. keep=[Col("INFO", "SU", "ge" 3)] \
         would keep variants if the value found in INFO --> SU was greater than or equal to 3
@@ -907,6 +907,7 @@ class CallSet:
                         other_bnd = partners[r.ID[:-2] + "_1"]
                     elif r.ID[:-2] + "_5" in partners:
                         other_bnd = partners[r.ID[:-2] + "_5"]
+
                     else:
                         partners[r.ID] = r
                         continue
@@ -963,7 +964,7 @@ class CallSet:
                     chrom2 = r.INFO["CHR2"]
                     if chrom2[0] != "c":
                         chrom2 = "chr" + chrom2
-                if svtype in ("DEL", "DUP", "INV", "INS") and "SVLEN" in r.INFO:
+                if svtype in ("DEL", "DUP", "INV", "INS", "SKIP") and "SVLEN" in r.INFO:
                     svlen = r.INFO["SVLEN"]
                     if isinstance(svlen, list):
                         svlen = svlen[0]
@@ -1058,9 +1059,7 @@ class CallSet:
                     d["GT"] = "NA"
             else:
                 d["GT"] = "NA"
-
             res.append(d)
-
         if len(res) == 0:
             print(f"Warning: empty vcf {path}", file=stderr)
             return self
@@ -1447,13 +1446,16 @@ def concat_dfs(cs_list):
 
 def sv_key(chrom, start, chrom2, end):
     # Return a sorted record
-
-    if chrom2 < chrom:
-        return chrom2, end, chrom, start
-    if end < start:
-        return chrom2, end, chrom, start
+    if chrom == chrom2:
+        if end < start:
+            return chrom2, end, chrom, start
+        else:
+            return chrom, start, chrom2, end
     else:
-        return chrom, start, chrom2, end
+        if chrom2 < chrom:
+            return chrom2, end, chrom, start
+        else:
+            return chrom, start, chrom2, end
 
 
 def intersecter(tree, chrom, start, end):
@@ -1497,7 +1499,8 @@ def best_index(out_edges, key="q"):
 
 def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., show_table=True, stratify=False,
              good_indexes_only=False, ref_size_bins=(30, 50, 500, 5000, 260000000), allow_duplicate_tp=True,
-             pct_size=0.05, ignore_svtype=True, min_ref_size=20, max_ref_size=None, dups_and_ins_equivalent=False):
+             pct_size=0.05, ignore_svtype=True, min_ref_size=20, max_ref_size=None, dups_and_ins_equivalent=False,
+             print_fn=False, print_fp=False, print_tp=False, print_dtp=False):
 
     # Build a Maximum Bipartite Matching graph:
     # https://www.geeksforgeeks.org/maximum-bipartite-matching/
@@ -1528,25 +1531,12 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         chrom, start, chrom2, end = sv_key(chrom, start, chrom2, end)
 
         ol_start = intersecter(tree, chrom, start, start + 1)
-        # if d_id == '54109':
-        #     print('start', ol_start, (start, start+1), file=stderr)
-        #     quit()
         if not ol_start:
-            # print("FALSE1", chrom, start, chrom2, end, svtype, file=stderr)
             continue
 
         ol_end = intersecter(tree, chrom2, end, end + 1)
-        # if d_id == '54109':
-        #     print('end', ol_end, file=stderr)
-        #     quit()
         if not ol_end:
-            # print("FALSE2", chrom, start, chrom2, end, svtype, file=stderr)
             continue
-
-        # if d_id == '54109':
-        #     print(ol_start, file=stderr)
-        #     print(ol_end, file=stderr)
-        #     quit()
 
         # Get the ref_data index
         common_idxs = set([i[2] for i in ol_start]).intersection([i[2] for i in ol_end])
@@ -1557,11 +1547,12 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         min_d = 1e12
         chosen_index = None
         ref_chrom, ref_start, ref_chrom2, ref_end = None, None, None, None
+
         for index in common_idxs:
             try:
                 ref_row = ref_bedpe.loc[index]
-            except IndexError:
-                raise ("Index error", index, " Try re-setting intervals")
+            except KeyError as e:
+                raise KeyError(f"Reference index {index} not found in ref_bedpe; try rebuilding intervals") from e
             ref_chrom, ref_start, ref_chrom2, ref_end = sv_key(ref_row["chrom"], ref_row["start"],
                                                                ref_row["chrom2"], ref_row["end"])
             # Make sure chromosomes match
@@ -1609,10 +1600,10 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             G.add_edge(('t', chosen_index), ('q', query_idx), dis=min_d, weight=w)
             # print(chosen_index, query_idx, (ref_chrom, ref_start), (ref_chrom2, ref_end), chrom, start, chrom2, end, svtype, file=stderr)
 
-        # if start == 57861455:
-        #     print(common_idxs)
-        #     print(chosen_index)
-        #     print(chrom, ref_chrom, chrom2, ref_chrom2, dis < min_d, index)
+        #if abs(start - 156874572) < 100:
+        #    print(common_idxs)
+        #    print(chosen_index)
+        #    print((chrom, start, chrom2, end), (ref_chrom, ref_start, ref_chrom2, ref_end), dis < min_d, index)
         #     quit()
 
     good_idxs = {}
@@ -1820,4 +1811,124 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
                 print("GT scores:", file=stderr)
                 print(data.gt_scores, file=stderr)
 
-    # print(data.breaks_df[data.breaks_df["FP"]], file=stderr)
+    if any((print_fn, print_fp, print_tp, print_dtp)):
+        print("\n", file=stderr)
+        print("#q_id\tchrom\tstart\tchrom2\tend\tsvtype\tsvlen\tclass\tref_index\tref_id\tref_chrom\tref_start\tref_chrom2\tref_end\tref_svtype\tref_svlen")
+    if print_fn:
+        fn_idx = sorted(missing_ref_indexes)
+        fn_df = ref_bedpe.loc[fn_idx].copy()
+        if True:
+            if len(fn_df) == 0:
+                pass
+            else:
+                for _, r in fn_df.iterrows():
+                    print(r.get("id", "."), 
+                          r["chrom"], 
+                          r["start"], 
+                          r["chrom2"], 
+                          r["end"], 
+                          r.get("svtype", "."), 
+                          r.get("svlen", "."), 
+                          "FN",
+                          "",
+                          "",
+                          "",
+                          "",
+                          "",
+                          "",
+                          "",
+                          "",
+                          sep="\t")
+
+
+    if print_fp:
+        fp_df = data.breaks_df[data.breaks_df["FP"]].copy()
+        if len(fp_df) == 0:
+            pass
+        else:
+            for q_idx, r in fp_df.iterrows():
+                print(
+                    r.get("id", q_idx),
+                    r.get("chrom", "."),
+                    r.get("start", "."),
+                    r.get("chrom2", "."),
+                    r.get("end", "."),
+                    r.get("svtype", "."),
+                    r.get("svlen", "."),
+                    "FP",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    sep="\t"
+                )
+
+    if print_tp:
+        tp_df = data.breaks_df[data.breaks_df["TP"]].copy()
+        if len(tp_df) == 0:
+            pass
+        else:
+            for q_idx, r in tp_df.iterrows():
+                ref_i = r.get("ref_index", None)
+                # ref_i might be float NaN, None, or an int-like
+                if ref_i is None or (ref_i != ref_i):
+                    ref_row = None
+                else:
+                    ref_row = ref_bedpe.loc[int(ref_i)]
+
+                print(
+                    r.get("id", q_idx),
+                    r.get("chrom", "."),
+                    r.get("start", "."),
+                    r.get("chrom2", "."),
+                    r.get("end", "."),
+                    r.get("svtype", "."),
+                    r.get("svlen", "."),
+                    "TP",
+                    "" if ref_row is None else int(ref_i),
+                    "" if ref_row is None else ref_row.get("id", "."),
+                    "" if ref_row is None else ref_row.get("chrom", "."),
+                    "" if ref_row is None else ref_row.get("start", "."),
+                    "" if ref_row is None else ref_row.get("chrom2", "."),
+                    "" if ref_row is None else ref_row.get("end", "."),
+                    "" if ref_row is None else ref_row.get("svtype", "."),
+                    "" if ref_row is None else ref_row.get("svlen", "."),
+                    sep="\t"
+                )
+
+    if print_dtp:
+        dtp_df = data.breaks_df[data.breaks_df["DTP"]].copy()
+        if len(dtp_df) == 0:
+            pass
+        else:
+            for q_idx, r in dtp_df.iterrows():
+                ref_i = r.get("ref_index", None)
+                if ref_i is None or (ref_i != ref_i):
+                    ref_row = None
+                else:
+                    ref_row = ref_bedpe.loc[int(ref_i)]
+
+                print(
+                    r.get("id", q_idx),
+                    r.get("chrom", "."),
+                    r.get("start", "."),
+                    r.get("chrom2", "."),
+                    r.get("end", "."),
+                    r.get("svtype", "."),
+                    r.get("svlen", "."),
+                    "DTP",
+                    "" if ref_row is None else int(ref_i),
+                    "" if ref_row is None else ref_row.get("id", "."),
+                    "" if ref_row is None else ref_row.get("chrom", "."),
+                    "" if ref_row is None else ref_row.get("start", "."),
+                    "" if ref_row is None else ref_row.get("chrom2", "."),
+                    "" if ref_row is None else ref_row.get("end", "."),
+                    "" if ref_row is None else ref_row.get("svtype", "."),
+                    "" if ref_row is None else ref_row.get("svlen", "."),
+                    sep="\t"
+                )
+

@@ -18,8 +18,13 @@ version = version("svbench")
 @click.option("--min-size-ref", help="Min SV length", default=0, type=int, show_default=True)
 @click.option("--min-size-query", help="Min SV length", default=30, type=int, show_default=True)
 @click.option("--no-duplicates", help="Don't quantify duplicate true positives", is_flag=True, flag_value=True, show_default=False, default=False)
+@click.option("--fn", help="Print false negatives", is_flag=True, flag_value=True, show_default=False, default=False)
+@click.option("--fp", help="Print false positives", is_flag=True, flag_value=True, show_default=False, default=False)
+@click.option("--tp", help="Print true positives", is_flag=True, flag_value=True, show_default=False, default=False)
+@click.option("--dtp", help="Print duplicate true positives", is_flag=True, flag_value=True, show_default=False, default=False)
 @click.version_option()
-def main(reference_vcf, query_vcfs, include, pass_only, pass_ref, pass_query, slop, min_size_ref, min_size_query, no_duplicates):
+def main(reference_vcf, query_vcfs, include, pass_only, pass_ref, pass_query, slop, min_size_ref, min_size_query, no_duplicates,
+         fn, fp, tp, dtp):
     keep = [svb.Col("FILTER", op="eq", thresh=None)] if (pass_only or pass_ref) else []
     ref = CallSet(dataset="REFERENCE", no_translocations=False).\
         load_vcf(reference_vcf, other_cols=["FILTER"], keep=keep). \
@@ -36,7 +41,8 @@ def main(reference_vcf, query_vcfs, include, pass_only, pass_ref, pass_query, sl
 
     if include:
         [i.filter_include_bed(include, inplace=True) for i in query]
-    svb.score(ref, query, allow_duplicate_tp=not no_duplicates)
+    svb.score(ref, query, allow_duplicate_tp=not no_duplicates, ignore_svtype=False, 
+              print_fn=fn, print_fp=fp, print_tp=tp, print_dtp=dtp)
 
 
 if __name__ == '__main__':
