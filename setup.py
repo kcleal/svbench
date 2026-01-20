@@ -6,7 +6,7 @@ setup(
     license='MIT',
     python_requires='>=3.7',
     install_requires=[
-            'numpy',
+            'numpy<2.4.0',
             'pandas',
             'networkx>=2.4',
             'ncls',
