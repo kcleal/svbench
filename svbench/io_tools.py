@@ -1674,9 +1674,9 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
         if threshold is None or len(dta) == 0:
             t = {"Total": len(dta),
                  "Ref": n_in_ref,
-                 "DTP": np.sum(np.in1d(dta["DTP"], True)),
-                 "TP": np.sum(np.in1d(dta["TP"], True)),
-                 "FP": np.sum(np.in1d(dta["FP"], True)),
+                 "DTP": np.sum(np.isin(dta["DTP"], True)),
+                 "TP": np.sum(np.isin(dta["TP"], True)),
+                 "FP": np.sum(np.isin(dta["FP"], True)),
                  "FN": len(missing_ref_indexes),
                  "T >=": None,
                  "Caller": data.caller,
@@ -1706,9 +1706,9 @@ def quantify(ref_data, data, force_intersection=False, reciprocal_overlap=0., sh
             if len(df) > 0:
                 t = {"Total": len(df),
                      "Ref": n_in_ref,
-                     "DTP": np.sum(np.in1d(df["DTP"], True)),
-                     "TP": np.sum(np.in1d(df["TP"], True)),
-                     "FP": np.sum(np.in1d(df["FP"], True)),
+                     "DTP": np.sum(np.isin(df["DTP"], True)),
+                     "TP": np.sum(np.isin(df["TP"], True)),
+                     "FP": np.sum(np.isin(df["FP"], True)),
                      "T >=": threshold,
                      "Caller": data.caller,
                      }

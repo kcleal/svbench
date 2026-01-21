@@ -71,21 +71,21 @@ def calc_score(table, v, ref=None, keep_duplicates=False):
     if v == "Total":
         return len(table)
     elif v in ("TP", "FP", "DTP"):
-        return np.in1d(table[v], True).sum()
+        return np.isin(table[v], True).sum()
     elif v == "Precision":
         if not keep_duplicates:
             t = table[~table["DTP"]]
         else:
             t = table
-        return np.in1d(t["TP"], True).sum() / float(len(t))
+        return np.isin(t["TP"], True).sum() / float(len(t))
     elif v == "Sensitivity":
         if ref is None:
             raise ValueError("ref data must be provided to calculate sensitivity")
         return table["TP"] / len(ref)
     elif v == "Duplication":
-        sdtp = np.in1d(table["TP"], True).sum()
+        sdtp = np.isin(table["TP"], True).sum()
         if sdtp > 0:
-            return np.in1d(table["DTP"], True).sum() / np.in1d(table["TP"], True).sum()
+            return np.isin(table["DTP"], True).sum() / np.isin(table["TP"], True).sum()
         return 0
     else:
         raise ValueError("Not implemented for table: {}".format(v))
