@@ -372,7 +372,7 @@ class CallSet:
         self.breaks_df = None
         self.extra_cols = None
         self.weight_field = None
-        self.no_translocations = True
+        self.no_translocations = False
         self.allowed_svtypes = None
         self.keep = None
         self.stratify = None
